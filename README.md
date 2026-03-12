@@ -63,8 +63,8 @@ K2450Suite/                 # K2450 packaging resources
 
 ## Author
 
-**Omer Vered** - Hayun Group, Ben-Gurion University of the Negev (BGU)
+**Omer Vered**
 
 ## License
 
-Copyright 2026 Omer Vered, BGU. All rights reserved.
+Copyright 2026 Omer Vered. All rights reserved.
