@@ -46,7 +46,7 @@ from keithley6430_driver import (
 )
 
 # Configure pyqtgraph
-pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#212529')
+pg.setConfigOptions(antialias=True, background='#1a1a2e', foreground='#e5e7eb')
 
 # Version info
 __version__ = "1.0.0"
@@ -71,25 +71,25 @@ class MeasurementPoint:
 
 
 class LightPalette(QPalette):
-    """Light theme color palette with teal/purple accents for 6430"""
+    """Dark theme color palette with teal/purple accents for 6430"""
     def __init__(self):
         super().__init__()
-        self.setColor(QPalette.Window, QColor(254, 254, 254))
-        self.setColor(QPalette.WindowText, QColor(33, 37, 41))
-        self.setColor(QPalette.Base, QColor(255, 255, 255))
-        self.setColor(QPalette.AlternateBase, QColor(240, 253, 250))  # Light teal
-        self.setColor(QPalette.ToolTipBase, QColor(17, 94, 89))       # Dark teal
+        self.setColor(QPalette.Window, QColor(26, 26, 46))            # #1a1a2e
+        self.setColor(QPalette.WindowText, QColor(229, 231, 235))     # #e5e7eb
+        self.setColor(QPalette.Base, QColor(22, 33, 62))              # #16213e
+        self.setColor(QPalette.AlternateBase, QColor(30, 42, 69))     # #1e2a45
+        self.setColor(QPalette.ToolTipBase, QColor(19, 78, 74))       # #134e4a
         self.setColor(QPalette.ToolTipText, QColor(255, 255, 255))
-        self.setColor(QPalette.Text, QColor(33, 37, 41))
-        self.setColor(QPalette.Button, QColor(204, 251, 241))         # Light teal
-        self.setColor(QPalette.ButtonText, QColor(17, 94, 89))
-        self.setColor(QPalette.BrightText, QColor(220, 53, 69))
-        self.setColor(QPalette.Link, QColor(13, 148, 136))            # Teal
-        self.setColor(QPalette.Highlight, QColor(13, 148, 136))
+        self.setColor(QPalette.Text, QColor(229, 231, 235))           # #e5e7eb
+        self.setColor(QPalette.Button, QColor(19, 78, 74))            # #134e4a
+        self.setColor(QPalette.ButtonText, QColor(45, 212, 191))      # #2dd4bf
+        self.setColor(QPalette.BrightText, QColor(239, 68, 68))       # #ef4444
+        self.setColor(QPalette.Link, QColor(45, 212, 191))            # #2dd4bf
+        self.setColor(QPalette.Highlight, QColor(45, 212, 191))       # #2dd4bf
         self.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-        self.setColor(QPalette.Disabled, QPalette.WindowText, QColor(156, 163, 175))
-        self.setColor(QPalette.Disabled, QPalette.Text, QColor(156, 163, 175))
-        self.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(156, 163, 175))
+        self.setColor(QPalette.Disabled, QPalette.WindowText, QColor(75, 86, 99))  # #4b5563
+        self.setColor(QPalette.Disabled, QPalette.Text, QColor(75, 86, 99))
+        self.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(75, 86, 99))
 
 
 class ToggleButton(QPushButton):
@@ -122,15 +122,15 @@ class ToggleButton(QPushButton):
         else:
             self.setStyleSheet("""
                 QPushButton {
-                    background-color: #ccfbf1;
-                    color: #115e59;
-                    border: 1px solid #99f6e4;
+                    background-color: #134e4a;
+                    color: #2dd4bf;
+                    border: 1px solid #0d9488;
                     padding: 6px 16px;
                     font-weight: 500;
                     font-size: 14px;
                     border-radius: 5px;
                 }
-                QPushButton:hover { background-color: #99f6e4; border-color: #5eead4; }
+                QPushButton:hover { background-color: #0f766e; border-color: #0d9488; }
             """)
 
 
@@ -141,11 +141,11 @@ class DigitalDisplay(QLabel):
         super().__init__("----")
         self.unit = unit
         self.decimals = decimals
-        self.color = "#059669"
+        self.color = "#22c55e"
         self.setStyleSheet("""
             QLabel {
                 background-color: transparent;
-                color: #059669;
+                color: #22c55e;
                 font-family: 'Consolas', monospace;
                 font-size: 28px;
                 font-weight: bold;
@@ -222,7 +222,7 @@ class MultimeterPanel(QWidget):
         # Title
         title = QLabel("LIVE MULTIMETER — Sub-Femtoamp")
         title.setFont(QFont("Inter", 24, QFont.Bold))
-        title.setStyleSheet("color: #0d9488;")
+        title.setStyleSheet("color: #2dd4bf;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
@@ -330,7 +330,7 @@ class MultimeterPanel(QWidget):
                 padding: 18px 45px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #c82333; }
-            QPushButton:disabled { background-color: #d1d5db; color: #9ca3af; }
+            QPushButton:disabled { background-color: #374151; color: #4b5563; }
         """)
         self.stop_btn.clicked.connect(self.stop_live)
         self.stop_btn.setEnabled(False)
@@ -349,7 +349,7 @@ class MultimeterPanel(QWidget):
                 padding: 14px 35px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #d63384; }
-            QPushButton:disabled { background-color: #d1d5db; color: #9ca3af; }
+            QPushButton:disabled { background-color: #374151; color: #4b5563; }
         """)
         self.record_btn.clicked.connect(self._start_recording)
         self.record_btn.setEnabled(False)
@@ -363,7 +363,7 @@ class MultimeterPanel(QWidget):
                 padding: 14px 35px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #e67312; }
-            QPushButton:disabled { background-color: #d1d5db; color: #9ca3af; }
+            QPushButton:disabled { background-color: #374151; color: #4b5563; }
         """)
         self.pause_record_btn.clicked.connect(self._pause_recording)
         self.pause_record_btn.setEnabled(False)
@@ -377,14 +377,14 @@ class MultimeterPanel(QWidget):
                 padding: 14px 35px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #138496; }
-            QPushButton:disabled { background-color: #d1d5db; color: #9ca3af; }
+            QPushButton:disabled { background-color: #374151; color: #4b5563; }
         """)
         self.save_record_btn.clicked.connect(self._save_recording)
         self.save_record_btn.setEnabled(False)
         record_layout.addWidget(self.save_record_btn)
 
         self.record_status = QLabel("Recording: Stopped | Points: 0")
-        self.record_status.setStyleSheet("color: #6b7280;")
+        self.record_status.setStyleSheet("color: #9ca3af;")
         record_layout.addWidget(self.record_status)
         record_layout.addStretch()
 
@@ -392,10 +392,10 @@ class MultimeterPanel(QWidget):
 
         # Recording Graph
         self.record_graph = pg.PlotWidget()
-        self.record_graph.setBackground('#ffffff')
-        self.record_graph.setLabel('left', 'Value', color='#212529')
-        self.record_graph.setLabel('bottom', 'Time (s)', color='#212529')
-        self.record_graph.setTitle("Recording Graph", color='#212529', size='14pt')
+        self.record_graph.setBackground('#1a1a2e')
+        self.record_graph.setLabel('left', 'Value', color='#e5e7eb')
+        self.record_graph.setLabel('bottom', 'Time (s)', color='#e5e7eb')
+        self.record_graph.setTitle("Recording Graph", color='#e5e7eb', size='14pt')
         self.record_graph.addLegend()
         self.record_graph.showGrid(x=True, y=True, alpha=0.2)
         self.record_graph.setMinimumHeight(200)
@@ -839,19 +839,19 @@ class SweepListWidget(QGroupBox):
         self.table.setMaximumHeight(200)
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: #ffffff;
-                color: #212529;
-                gridline-color: #99f6e4;
+                background-color: #1e2a45;
+                color: #e5e7eb;
+                gridline-color: #374151;
                 font-size: 13px;
             }
-            QTableWidget::item { color: #212529; }
+            QTableWidget::item { color: #e5e7eb; }
             QHeaderView::section {
-                background-color: #ccfbf1;
-                color: #115e59;
+                background-color: #134e4a;
+                color: #2dd4bf;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 6px;
-                border: 1px solid #99f6e4;
+                border: 1px solid #374151;
             }
         """)
         layout.addWidget(self.table)
@@ -990,7 +990,7 @@ class DualAxisGraph(pg.PlotWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setBackground('#ffffff')
+        self.setBackground('#1a1a2e')
         self.showGrid(x=True, y=True, alpha=0.2)
 
         self.data_points: List[MeasurementPoint] = []
@@ -1103,20 +1103,20 @@ class DataTableWidget(QTableWidget):
         self.setAlternatingRowColors(True)
         self.setStyleSheet("""
             QTableWidget {
-                background-color: #ffffff;
-                alternate-background-color: #f0fdfa;
-                color: #212529;
-                gridline-color: #99f6e4;
+                background-color: #1e2a45;
+                alternate-background-color: #16213e;
+                color: #e5e7eb;
+                gridline-color: #374151;
                 font-size: 13px;
             }
-            QTableWidget::item { color: #212529; padding: 4px; }
+            QTableWidget::item { color: #e5e7eb; padding: 4px; }
             QHeaderView::section {
-                background-color: #ccfbf1;
-                color: #115e59;
+                background-color: #134e4a;
+                color: #2dd4bf;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 8px 5px;
-                border: 1px solid #99f6e4;
+                border: 1px solid #374151;
             }
         """)
 
@@ -1155,7 +1155,7 @@ class ConnectionDialog(QDialog):
         # Title
         title = QLabel("Keithley 6430 — RS-232 Connection")
         title.setFont(QFont("Inter", 16, QFont.Bold))
-        title.setStyleSheet("color: #0d9488;")
+        title.setStyleSheet("color: #2dd4bf;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
@@ -1200,13 +1200,13 @@ class ConnectionDialog(QDialog):
 
         # Status label
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: #6b7280; font-style: italic;")
+        self.status_label.setStyleSheet("color: #9ca3af; font-style: italic;")
         layout.addWidget(self.status_label)
 
         # Separator
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("background-color: #99f6e4;")
+        line.setStyleSheet("background-color: #374151;")
         layout.addWidget(line)
 
         # Simulation section
@@ -1275,7 +1275,7 @@ class ConnectionDialog(QDialog):
         if result:
             port, baud = result
             self.status_label.setText(f"Found Keithley 6430 on {port} at {baud} baud!")
-            self.status_label.setStyleSheet("color: #28a745; font-weight: bold;")
+            self.status_label.setStyleSheet("color: #22c55e; font-weight: bold;")
             self.baud_combo.setCurrentText(str(baud))
             # Select the port in the list
             for i in range(self.port_list.count()):
@@ -1591,14 +1591,14 @@ class WaveToolDialog(QDialog):
         layout.addWidget(preview_btn)
 
         self.info_label = QLabel("Configure parameters and click Preview")
-        self.info_label.setStyleSheet("color: #6b7280; font-style: italic;")
+        self.info_label.setStyleSheet("color: #9ca3af; font-style: italic;")
         layout.addWidget(self.info_label)
 
         self.preview_graph = pg.PlotWidget()
-        self.preview_graph.setBackground('#ffffff')
-        self.preview_graph.setLabel('left', 'Output Value', color='#212529')
-        self.preview_graph.setLabel('bottom', 'Time (s)', color='#212529')
-        self.preview_graph.setTitle("Waveform Preview", color='#212529', size='14pt')
+        self.preview_graph.setBackground('#1a1a2e')
+        self.preview_graph.setLabel('left', 'Output Value', color='#e5e7eb')
+        self.preview_graph.setLabel('bottom', 'Time (s)', color='#e5e7eb')
+        self.preview_graph.setTitle("Waveform Preview", color='#e5e7eb', size='14pt')
         self.preview_graph.showGrid(x=True, y=True, alpha=0.2)
         self.preview_graph.setMinimumHeight(200)
         self.waveform_plot = self.preview_graph.plot([], [], pen=pg.mkPen('#0d9488', width=2))
@@ -1845,7 +1845,7 @@ class Keithley6430App(QMainWindow):
         header.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #0d9488, stop:0.5 #7c3aed, stop:1 #f59e0b);
+                    stop:0 #0d9488, stop:0.5 #6d28d9, stop:1 #d97706);
             }
         """)
         header_layout = QHBoxLayout(header)
@@ -1896,7 +1896,7 @@ class Keithley6430App(QMainWindow):
                 padding: 12px 35px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #218838; }
-            QPushButton:disabled { background-color: #d1d5db; color: #9ca3af; }
+            QPushButton:disabled { background-color: #374151; color: #4b5563; }
         """)
         self.start_btn.clicked.connect(self.start_sweep)
         toolbar.addWidget(self.start_btn)
@@ -1909,7 +1909,7 @@ class Keithley6430App(QMainWindow):
                 padding: 12px 35px; border-radius: 5px;
             }
             QPushButton:hover { background-color: #c82333; }
-            QPushButton:disabled { background-color: #d1d5db; color: #9ca3af; }
+            QPushButton:disabled { background-color: #374151; color: #4b5563; }
         """)
         self.stop_btn.clicked.connect(self.stop_sweep)
         self.stop_btn.setEnabled(False)
@@ -1935,7 +1935,7 @@ class Keithley6430App(QMainWindow):
         # Left panel: Settings
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
-        left_scroll.setMaximumWidth(380)
+        left_scroll.setMaximumWidth(420)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         left_panel = QWidget()
@@ -1960,7 +1960,7 @@ class Keithley6430App(QMainWindow):
 
         # Middle panel: Sweep list
         self.sweep_list = SweepListWidget()
-        self.sweep_list.setMaximumWidth(380)
+        self.sweep_list.setMaximumWidth(400)
         self.sweep_list.wave_generator_requested.connect(self._show_wave_tool)
         sweep_layout.addWidget(self.sweep_list)
 
@@ -2031,7 +2031,7 @@ class Keithley6430App(QMainWindow):
         self.setStatusBar(self.status)
 
         self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("font-family: Consolas; color: #6b7280;")
+        self.progress_label.setStyleSheet("font-family: Consolas; color: #9ca3af;")
         self.status.addPermanentWidget(self.progress_label)
 
         self.progress = QProgressBar()
@@ -2263,7 +2263,7 @@ class Keithley6430App(QMainWindow):
         else:
             port_info = self.smu.get_serial_info()
             self.connection_label.setText(f"Connected ({port_info['port']} @ {port_info['baud_rate']})")
-            self.connection_label.setStyleSheet("color: #28a745; font-weight: bold;")
+            self.connection_label.setStyleSheet("color: #22c55e; font-weight: bold;")
 
         self.status.showMessage("Connected to Keithley 6430")
 
@@ -2569,49 +2569,49 @@ def main():
     font = QFont("Inter", 13)
     app.setFont(font)
 
-    # Global stylesheet with teal/amber accents for 6430 branding
+    # Global stylesheet with dark mode teal/amber accents for 6430 branding
     app.setStyleSheet("""
         * {
             font-family: 'Inter', sans-serif;
-            color: #212529;
+            color: #e5e7eb;
         }
         QMainWindow, QWidget {
-            background-color: #fefefe;
-            color: #212529;
+            background-color: #1a1a2e;
+            color: #e5e7eb;
         }
         QLabel {
             font-size: 14px;
-            color: #212529;
+            color: #e5e7eb;
             font-weight: 500;
         }
         QPushButton {
             font-size: 14px;
-            color: #212529;
-            background-color: #ccfbf1;
-            border: 1px solid #99f6e4;
+            color: #2dd4bf;
+            background-color: #134e4a;
+            border: 1px solid #0d9488;
             padding: 6px 14px;
             border-radius: 5px;
             font-weight: 500;
         }
         QPushButton:hover {
-            background-color: #99f6e4;
-            border-color: #5eead4;
+            background-color: #0f766e;
+            border-color: #0d9488;
         }
         QPushButton:disabled {
-            background-color: #f0fdfa;
-            color: #9ca3af;
-            border-color: #ccfbf1;
+            background-color: #374151;
+            color: #4b5563;
+            border-color: #374151;
         }
         QCheckBox, QRadioButton {
             font-size: 14px;
-            color: #212529;
+            color: #e5e7eb;
             font-weight: 500;
         }
         QGroupBox {
             font-size: 16px;
             font-weight: bold;
-            color: #212529;
-            border: 2px solid #99f6e4;
+            color: #e5e7eb;
+            border: 2px solid #374151;
             border-radius: 8px;
             margin-top: 16px;
             padding-top: 12px;
@@ -2621,50 +2621,50 @@ def main():
             subcontrol-origin: margin;
             left: 12px;
             padding: 0 10px;
-            color: #0d9488;
-            background-color: #fefefe;
+            color: #2dd4bf;
+            background-color: #1a1a2e;
             font-size: 18px;
             font-weight: bold;
         }
         QTableWidget, QListWidget {
             font-size: 13px;
-            color: #212529;
-            background-color: #ffffff;
-            border: 1px solid #99f6e4;
+            color: #e5e7eb;
+            background-color: #1e2a45;
+            border: 1px solid #374151;
         }
         QTableWidget::item, QListWidget::item {
-            color: #212529;
+            color: #e5e7eb;
         }
         QHeaderView::section {
-            background-color: #ccfbf1;
-            color: #212529;
+            background-color: #134e4a;
+            color: #2dd4bf;
             font-weight: bold;
             padding: 8px;
-            border: 1px solid #99f6e4;
+            border: 1px solid #374151;
         }
         QToolTip {
             font-size: 13px;
-            background-color: #115e59;
+            background-color: #134e4a;
             color: #ffffff;
-            border: 1px solid #0d9488;
+            border: 1px solid #2dd4bf;
             padding: 6px;
         }
         QMenuBar {
             font-size: 14px;
-            background-color: #fefefe;
-            color: #212529;
-            border-bottom: 1px solid #99f6e4;
+            background-color: #1a1a2e;
+            color: #e5e7eb;
+            border-bottom: 1px solid #374151;
         }
-        QMenuBar::item { color: #212529; }
-        QMenuBar::item:selected { background-color: #ccfbf1; }
+        QMenuBar::item { color: #e5e7eb; }
+        QMenuBar::item:selected { background-color: #0d9488; }
         QMenu {
             font-size: 14px;
-            background-color: #ffffff;
-            color: #212529;
-            border: 1px solid #99f6e4;
+            background-color: #16213e;
+            color: #e5e7eb;
+            border: 1px solid #374151;
         }
         QMenu::item {
-            color: #212529;
+            color: #e5e7eb;
             padding: 6px 20px;
         }
         QMenu::item:selected {
@@ -2672,38 +2672,38 @@ def main():
             color: #ffffff;
         }
         QTabWidget::pane {
-            border: 1px solid #99f6e4;
-            background-color: #ffffff;
+            border: 1px solid #374151;
+            background-color: #1a1a2e;
         }
         QTabBar::tab {
             font-size: 15px;
             padding: 12px 20px;
-            background-color: #fff7ed;
-            color: #92400e;
-            border: 1px solid #fed7aa;
+            background-color: #78350f;
+            color: #f59e0b;
+            border: 1px solid #374151;
             border-bottom: none;
             margin-right: 2px;
             font-weight: 500;
         }
         QTabBar::tab:selected {
-            background-color: #ffffff;
-            color: #0d9488;
+            background-color: #1a1a2e;
+            color: #2dd4bf;
             font-weight: bold;
-            border-color: #99f6e4;
+            border-color: #374151;
         }
-        QTabBar::tab:hover { background-color: #fef3c7; }
+        QTabBar::tab:hover { background-color: #1f3460; }
         QComboBox {
             font-size: 14px;
-            color: #212529;
-            background-color: #ffffff;
-            border: 1px solid #fed7aa;
+            color: #e5e7eb;
+            background-color: #1e2a45;
+            border: 1px solid #f59e0b60;
             padding: 6px 10px;
             border-radius: 5px;
         }
-        QComboBox:hover { border-color: #f97316; }
+        QComboBox:hover { border-color: #f59e0b; }
         QComboBox QAbstractItemView {
-            background-color: #ffffff;
-            color: #212529;
+            background-color: #1e2a45;
+            color: #e5e7eb;
             selection-background-color: #0d9488;
             selection-color: #ffffff;
         }
@@ -2711,77 +2711,77 @@ def main():
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 25px;
-            border-left: 1px solid #fed7aa;
+            border-left: 1px solid #f59e0b60;
             border-top-right-radius: 4px;
             border-bottom-right-radius: 4px;
-            background-color: #fff7ed;
+            background-color: #1e2a45;
         }
-        QComboBox::drop-down:hover { background-color: #ffedd5; }
+        QComboBox::drop-down:hover { background-color: #1f3460; }
         QSpinBox, QDoubleSpinBox {
             font-size: 14px;
-            color: #212529;
-            background-color: #ffffff;
-            border: 1px solid #fed7aa;
+            color: #e5e7eb;
+            background-color: #1e2a45;
+            border: 1px solid #f59e0b60;
             padding: 6px 8px;
             padding-right: 24px;
             border-radius: 5px;
             min-width: 60px;
         }
-        QSpinBox:hover, QDoubleSpinBox:hover { border-color: #f97316; }
+        QSpinBox:hover, QDoubleSpinBox:hover { border-color: #f59e0b; }
         QSpinBox::up-button, QDoubleSpinBox::up-button {
             subcontrol-origin: border;
             subcontrol-position: top right;
             width: 22px;
-            border-left: 1px solid #fed7aa;
-            border-bottom: 1px solid #fed7aa;
+            border-left: 1px solid #f59e0b60;
+            border-bottom: 1px solid #f59e0b60;
             border-top-right-radius: 4px;
-            background-color: #fff7ed;
+            background-color: #1e2a45;
         }
-        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover { background-color: #ffedd5; }
+        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover { background-color: #1f3460; }
         QSpinBox::down-button, QDoubleSpinBox::down-button {
             subcontrol-origin: border;
             subcontrol-position: bottom right;
             width: 22px;
-            border-left: 1px solid #fed7aa;
+            border-left: 1px solid #f59e0b60;
             border-bottom-right-radius: 4px;
-            background-color: #fff7ed;
+            background-color: #1e2a45;
         }
-        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background-color: #ffedd5; }
+        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background-color: #1f3460; }
         QScrollBar:vertical {
-            background-color: #f0fdfa;
+            background-color: #16213e;
             width: 12px;
             border-radius: 6px;
         }
         QScrollBar::handle:vertical {
-            background-color: #99f6e4;
+            background-color: #374151;
             border-radius: 6px;
             min-height: 30px;
         }
-        QScrollBar::handle:vertical:hover { background-color: #5eead4; }
+        QScrollBar::handle:vertical:hover { background-color: #4b5563; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         QScrollBar:horizontal {
-            background-color: #f0fdfa;
+            background-color: #16213e;
             height: 12px;
             border-radius: 6px;
         }
         QScrollBar::handle:horizontal {
-            background-color: #99f6e4;
+            background-color: #374151;
             border-radius: 6px;
             min-width: 30px;
         }
-        QScrollBar::handle:horizontal:hover { background-color: #5eead4; }
+        QScrollBar::handle:horizontal:hover { background-color: #4b5563; }
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
         QStatusBar {
-            background-color: #fefefe;
-            color: #115e59;
-            border-top: 1px solid #99f6e4;
+            background-color: #1a1a2e;
+            color: #2dd4bf;
+            border-top: 1px solid #374151;
         }
         QProgressBar {
-            border: 1px solid #99f6e4;
+            border: 1px solid #374151;
             border-radius: 4px;
-            background-color: #ccfbf1;
+            background-color: #134e4a;
             text-align: center;
-            color: #212529;
+            color: #e5e7eb;
             font-weight: bold;
         }
         QProgressBar::chunk {
