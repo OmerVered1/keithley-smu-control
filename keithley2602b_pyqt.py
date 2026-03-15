@@ -145,7 +145,7 @@ class DigitalDisplay(QLabel):
             QLabel {
                 background-color: transparent;
                 color: #22c55e;
-                font-family: 'Consolas', monospace;
+                font-family: 'Inter', sans-serif;
                 font-size: 28px;
                 font-weight: bold;
                 padding: 10px 15px;
@@ -185,7 +185,7 @@ class DigitalDisplay(QLabel):
             QLabel {{
                 background-color: transparent;
                 color: {color};
-                font-family: 'Consolas', monospace;
+                font-family: 'Inter', sans-serif;
                 font-size: 28px;
                 font-weight: bold;
                 padding: 10px 15px;
@@ -1142,7 +1142,7 @@ class ConnectionDialog(QDialog):
 
         layout.addWidget(QLabel("Connect to Real Instrument:"))
         self.resource_list = QListWidget()
-        self.resource_list.setStyleSheet("font-family: 'Consolas', 'Inter'; font-size: 15px;")
+        self.resource_list.setStyleSheet("font-family: 'Inter'; font-size: 15px;")
         layout.addWidget(self.resource_list)
 
         btn_layout = QHBoxLayout()
@@ -1786,7 +1786,7 @@ class Keithley2602BApp(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(20, 5, 20, 5)
 
-        header_title = QLabel(f"\u26a1 {__app_name__}")
+        header_title = QLabel(__app_name__)
         header_title.setStyleSheet("color: white; font-size: 22px; font-weight: bold; font-family: 'Inter'; background: transparent;")
         header_layout.addWidget(header_title)
         header_layout.addStretch()
@@ -2009,7 +2009,7 @@ class Keithley2602BApp(QMainWindow):
         self.setStatusBar(self.status)
 
         self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("font-family: Consolas; color: #9ca3af;")
+        self.progress_label.setStyleSheet("font-family: 'Inter'; color: #9ca3af;")
         self.status.addPermanentWidget(self.progress_label)
 
         self.progress = QProgressBar()

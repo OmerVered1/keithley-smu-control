@@ -70,7 +70,7 @@ class InstrumentCard(QFrame):
 
         # Specs
         specs_label = QLabel(specs)
-        specs_label.setFont(QFont("Consolas", 12))
+        specs_label.setFont(QFont("Inter", 12))
         specs_label.setStyleSheet("color: #9ca3af; background: transparent;")
         specs_label.setAlignment(Qt.AlignCenter)
         specs_label.setWordWrap(True)

@@ -146,7 +146,7 @@ class DigitalDisplay(QLabel):
             QLabel {
                 background-color: transparent;
                 color: #22c55e;
-                font-family: 'Consolas', monospace;
+                font-family: 'Inter', sans-serif;
                 font-size: 28px;
                 font-weight: bold;
                 padding: 10px 15px;
@@ -190,7 +190,7 @@ class DigitalDisplay(QLabel):
             QLabel {{
                 background-color: transparent;
                 color: {color};
-                font-family: 'Consolas', monospace;
+                font-family: 'Inter', sans-serif;
                 font-size: 28px;
                 font-weight: bold;
                 padding: 10px 15px;
@@ -1162,7 +1162,7 @@ class ConnectionDialog(QDialog):
         # Serial port section
         layout.addWidget(QLabel("Available Serial Ports:"))
         self.port_list = QListWidget()
-        self.port_list.setStyleSheet("font-family: 'Consolas', 'Inter'; font-size: 15px;")
+        self.port_list.setStyleSheet("font-family: 'Inter'; font-size: 15px;")
         layout.addWidget(self.port_list)
 
         # Baud rate
@@ -1851,7 +1851,7 @@ class Keithley6430App(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(20, 5, 20, 5)
 
-        header_title = QLabel(f"⚡ {__app_name__} — Sub-Femtoamp")
+        header_title = QLabel(f"{__app_name__} — Sub-Femtoamp")
         header_title.setStyleSheet(
             "color: white; font-size: 22px; font-weight: bold; "
             "font-family: 'Inter'; background: transparent;"
@@ -2041,7 +2041,7 @@ class Keithley6430App(QMainWindow):
         self.setStatusBar(self.status)
 
         self.progress_label = QLabel("")
-        self.progress_label.setStyleSheet("font-family: Consolas; color: #9ca3af;")
+        self.progress_label.setStyleSheet("font-family: 'Inter'; color: #9ca3af;")
         self.status.addPermanentWidget(self.progress_label)
 
         self.progress = QProgressBar()
