@@ -1636,7 +1636,7 @@ class Keithley2602BApp(QMainWindow):
         self.settings = QSettings(__organization__, __app_name__)
 
         self.setWindowTitle(f"{__app_name__} - Dual-Channel I-V Characterizer")
-        self.setMinimumSize(1400, 900)
+        self.setMinimumSize(1000, 700)
 
         if not self._check_license_agreement():
             sys.exit(0)
@@ -1898,12 +1898,16 @@ class Keithley2602BApp(QMainWindow):
 
         # Tab 2: I-V Sweep
         sweep_tab = QWidget()
-        sweep_layout = QHBoxLayout(sweep_tab)
+        sweep_outer = QVBoxLayout(sweep_tab)
+        sweep_outer.setContentsMargins(0, 0, 0, 0)
+
+        # Use QSplitter for responsive 3-column layout
+        sweep_splitter = QSplitter(Qt.Horizontal)
 
         # Left panel: Settings
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
-        left_scroll.setMaximumWidth(420)
+        left_scroll.setMinimumWidth(200)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         left_panel = QWidget()
@@ -1924,13 +1928,13 @@ class Keithley2602BApp(QMainWindow):
 
         left_layout.addStretch()
         left_scroll.setWidget(left_panel)
-        sweep_layout.addWidget(left_scroll)
+        sweep_splitter.addWidget(left_scroll)
 
         # Middle panel: Sweep list
         self.sweep_list = SweepListWidget()
-        self.sweep_list.setMaximumWidth(400)
+        self.sweep_list.setMinimumWidth(200)
         self.sweep_list.wave_generator_requested.connect(self._show_wave_tool)
-        sweep_layout.addWidget(self.sweep_list)
+        sweep_splitter.addWidget(self.sweep_list)
 
         # Right panel: Graph and Table
         right_splitter = QSplitter(Qt.Vertical)
@@ -1987,7 +1991,13 @@ class Keithley2602BApp(QMainWindow):
         right_splitter.addWidget(self.table)
 
         right_splitter.setSizes([500, 300])
-        sweep_layout.addWidget(right_splitter)
+        sweep_splitter.addWidget(right_splitter)
+
+        sweep_splitter.setSizes([250, 250, 750])
+        sweep_splitter.setStretchFactor(0, 1)
+        sweep_splitter.setStretchFactor(1, 1)
+        sweep_splitter.setStretchFactor(2, 3)
+        sweep_outer.addWidget(sweep_splitter)
 
         tabs.addTab(sweep_tab, "\U0001f4ca I-V Sweep")
 
