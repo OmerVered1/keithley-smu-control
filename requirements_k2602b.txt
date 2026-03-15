@@ -1,0 +1,7 @@
+# Keithley 2602B Control Suite Dependencies
+PyQt5>=5.15.0
+pyqtgraph>=0.13.0
+pyvisa>=1.13.0
+pyvisa-py>=0.7.0
+numpy>=1.24.0
+Pillow>=10.0.0

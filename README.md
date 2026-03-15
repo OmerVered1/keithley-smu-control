@@ -17,7 +17,14 @@ Professional control and I-V characterization software for Keithley Source Measu
 - Guard mode for ultra-low current
 - See [README_k6430.md](README_k6430.md) for details
 
-## Features (Both Instruments)
+### Keithley 2602B Dual-Channel SourceMeter
+- VISA communication (USB, GPIB, Ethernet, RS-232 via pyvisa)
+- Dual independent channels (smua/smub)
+- Source voltage/current: +/-40V, +/-3A DC (10A pulse), 40.4W per channel
+- TSP (Test Script Processor) native command interface
+- Channel A/B toggle with independent output controls
+
+## Features (All Instruments)
 
 - Live multimeter mode with large digital displays
 - I-V sweep characterization (Linear, List, Log)
@@ -30,16 +37,25 @@ Professional control and I-V characterization software for Keithley Source Measu
 
 ## Quick Start
 
-### Keithley 2450
+### Unified Launcher (recommended)
 ```bash
-pip install -r requirements_k2450.txt
-python keithley2450_pyqt.py
+pip install -r requirements_k2602b.txt
+python launcher.py
 ```
 
-### Keithley 6430
+### Individual Instruments
 ```bash
+# Keithley 2450
+pip install -r requirements_k2450.txt
+python keithley2450_pyqt.py
+
+# Keithley 6430
 pip install -r requirements_k6430.txt
 python keithley6430_pyqt.py
+
+# Keithley 2602B
+pip install -r requirements_k2602b.txt
+python keithley2602b_pyqt.py
 ```
 
 ## File Structure
@@ -58,6 +74,11 @@ keithley6430_pyqt.py        # K6430 PyQt5 GUI
 requirements_k6430.txt      # K6430 dependencies
 README_k6430.md             # K6430 documentation
 
+keithley2602b_driver.py     # K2602B TSP driver (dual-channel)
+keithley2602b_pyqt.py       # K2602B PyQt5 GUI
+requirements_k2602b.txt     # K2602B dependencies
+
+launcher.py                 # Unified instrument launcher
 K2450Suite/                 # K2450 packaging resources
 ```
 
