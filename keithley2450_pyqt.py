@@ -2775,7 +2775,19 @@ def main():
             subcontrol-position: top right;
             width: 25px;
             border-left: 1px solid #374151;
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
             background-color: #1e3a5f;
+        }
+        QComboBox::drop-down:hover { background-color: #1f3460; }
+        QComboBox::down-arrow {
+            width: 12px;
+            height: 12px;
+            border: none;
+            border-left: 3px solid transparent;
+            border-right: 3px solid transparent;
+            border-top: 5px solid #e5e7eb;
+            margin-top: 2px;
         }
         QSpinBox, QDoubleSpinBox {
             font-size: 14px;
