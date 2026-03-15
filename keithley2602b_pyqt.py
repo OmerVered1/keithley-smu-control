@@ -1903,7 +1903,7 @@ class Keithley2602BApp(QMainWindow):
         # Left panel: Settings
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
-        left_scroll.setMaximumWidth(380)
+        left_scroll.setMaximumWidth(420)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         left_panel = QWidget()
@@ -1928,7 +1928,7 @@ class Keithley2602BApp(QMainWindow):
 
         # Middle panel: Sweep list
         self.sweep_list = SweepListWidget()
-        self.sweep_list.setMaximumWidth(380)
+        self.sweep_list.setMaximumWidth(400)
         self.sweep_list.wave_generator_requested.connect(self._show_wave_tool)
         sweep_layout.addWidget(self.sweep_list)
 

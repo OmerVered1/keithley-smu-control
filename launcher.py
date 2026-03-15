@@ -19,7 +19,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPalette, QColor
 
 
-__version__ = "1.0.0"
+__version__ = "1.1.3"
 __app_name__ = "Keithley SMU Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Ben-Gurion University of the Negev (BGU)"
@@ -56,7 +56,7 @@ class InstrumentCard(QFrame):
         # Subtitle
         sub_label = QLabel(subtitle)
         sub_label.setFont(QFont("Inter", 14))
-        sub_label.setStyleSheet("color: #374151; background: transparent;")
+        sub_label.setStyleSheet("color: #9ca3af; background: transparent;")
         sub_label.setAlignment(Qt.AlignCenter)
         sub_label.setWordWrap(True)
         layout.addWidget(sub_label)
@@ -71,7 +71,7 @@ class InstrumentCard(QFrame):
         # Specs
         specs_label = QLabel(specs)
         specs_label.setFont(QFont("Consolas", 12))
-        specs_label.setStyleSheet("color: #6b7280; background: transparent;")
+        specs_label.setStyleSheet("color: #9ca3af; background: transparent;")
         specs_label.setAlignment(Qt.AlignCenter)
         specs_label.setWordWrap(True)
         layout.addWidget(specs_label)
@@ -100,20 +100,20 @@ class InstrumentCard(QFrame):
     def _set_default_style(self):
         self.setStyleSheet(f"""
             InstrumentCard {{
-                background-color: #ffffff;
-                border: 2px solid #e5e7eb;
+                background-color: #1e1e2e;
+                border: 2px solid #374151;
                 border-radius: 16px;
             }}
             InstrumentCard:hover {{
                 border-color: {self.accent_color};
-                background-color: #fafafa;
+                background-color: #252536;
             }}
         """)
 
     def enterEvent(self, event):
         self.setStyleSheet(f"""
             InstrumentCard {{
-                background-color: #fafafa;
+                background-color: #252536;
                 border: 2px solid {self.accent_color};
                 border-radius: 16px;
             }}
@@ -143,13 +143,13 @@ class LauncherWindow(QMainWindow):
         # Title
         title = QLabel(__app_name__)
         title.setFont(QFont("Inter", 32, QFont.Bold))
-        title.setStyleSheet("color: #111827;")
+        title.setStyleSheet("color: #e5e7eb;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel("Select an instrument to launch its control application")
         subtitle.setFont(QFont("Inter", 14))
-        subtitle.setStyleSheet("color: #6b7280;")
+        subtitle.setStyleSheet("color: #9ca3af;")
         subtitle.setAlignment(Qt.AlignCenter)
         layout.addWidget(subtitle)
 
@@ -192,9 +192,9 @@ class LauncherWindow(QMainWindow):
         layout.addLayout(cards_layout)
 
         # Footer
-        footer = QLabel(f"v{__version__} | {__author__}, Hayun Group, {__organization__}")
+        footer = QLabel(f"v{__version__} Created by {__author__} with claude code")
         footer.setFont(QFont("Inter", 11))
-        footer.setStyleSheet("color: #9ca3af;")
+        footer.setStyleSheet("color: #6b7280;")
         footer.setAlignment(Qt.AlignCenter)
         layout.addWidget(footer)
 
@@ -256,16 +256,16 @@ class LauncherWindow(QMainWindow):
 
 
 class LauncherPalette(QPalette):
-    """Neutral palette for the launcher"""
+    """Dark theme palette for the launcher"""
     def __init__(self):
         super().__init__()
-        self.setColor(QPalette.Window, QColor(249, 250, 251))     # #f9fafb gray-50
-        self.setColor(QPalette.WindowText, QColor(17, 24, 39))    # #111827 gray-900
-        self.setColor(QPalette.Base, QColor(255, 255, 255))
-        self.setColor(QPalette.AlternateBase, QColor(243, 244, 246))
-        self.setColor(QPalette.Text, QColor(17, 24, 39))
-        self.setColor(QPalette.Button, QColor(229, 231, 235))
-        self.setColor(QPalette.ButtonText, QColor(17, 24, 39))
+        self.setColor(QPalette.Window, QColor(17, 17, 27))        # #11111b dark bg
+        self.setColor(QPalette.WindowText, QColor(229, 231, 235)) # #e5e7eb
+        self.setColor(QPalette.Base, QColor(30, 30, 46))          # #1e1e2e
+        self.setColor(QPalette.AlternateBase, QColor(37, 37, 54)) # #252536
+        self.setColor(QPalette.Text, QColor(229, 231, 235))
+        self.setColor(QPalette.Button, QColor(55, 65, 81))        # #374151
+        self.setColor(QPalette.ButtonText, QColor(229, 231, 235))
         self.setColor(QPalette.Highlight, QColor(59, 130, 246))
         self.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
 
@@ -280,7 +280,7 @@ def main():
 
     app.setStyleSheet("""
         QMainWindow {
-            background-color: #f9fafb;
+            background-color: #11111b;
         }
     """)
 
