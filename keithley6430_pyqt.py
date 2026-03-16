@@ -71,21 +71,21 @@ class MeasurementPoint:
 
 
 class LightPalette(QPalette):
-    """Dark theme color palette with teal/purple accents for 6430"""
+    """Dark theme color palette with neutral greyscale for 6430"""
     def __init__(self):
         super().__init__()
         self.setColor(QPalette.Window, QColor(26, 26, 46))            # #1a1a2e
         self.setColor(QPalette.WindowText, QColor(229, 231, 235))     # #e5e7eb
-        self.setColor(QPalette.Base, QColor(22, 33, 62))              # #16213e
-        self.setColor(QPalette.AlternateBase, QColor(30, 42, 69))     # #1e2a45
-        self.setColor(QPalette.ToolTipBase, QColor(19, 78, 74))       # #134e4a
+        self.setColor(QPalette.Base, QColor(30, 30, 46))               # #1e1e2e
+        self.setColor(QPalette.AlternateBase, QColor(32, 32, 48))     # #202030
+        self.setColor(QPalette.ToolTipBase, QColor(37, 37, 54))        # #252536
         self.setColor(QPalette.ToolTipText, QColor(255, 255, 255))
         self.setColor(QPalette.Text, QColor(229, 231, 235))           # #e5e7eb
-        self.setColor(QPalette.Button, QColor(19, 78, 74))            # #134e4a
-        self.setColor(QPalette.ButtonText, QColor(45, 212, 191))      # #2dd4bf
+        self.setColor(QPalette.Button, QColor(32, 32, 48))            # #202030
+        self.setColor(QPalette.ButtonText, QColor(229, 231, 235))     # #e5e7eb
         self.setColor(QPalette.BrightText, QColor(239, 68, 68))       # #ef4444
-        self.setColor(QPalette.Link, QColor(45, 212, 191))            # #2dd4bf
-        self.setColor(QPalette.Highlight, QColor(45, 212, 191))       # #2dd4bf
+        self.setColor(QPalette.Link, QColor(229, 231, 235))           # #e5e7eb
+        self.setColor(QPalette.Highlight, QColor(229, 231, 235))      # #e5e7eb
         self.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
         self.setColor(QPalette.Disabled, QPalette.WindowText, QColor(75, 86, 99))  # #4b5563
         self.setColor(QPalette.Disabled, QPalette.Text, QColor(75, 86, 99))
@@ -110,8 +110,8 @@ class ToggleButton(QPushButton):
         if self._selected:
             self.setStyleSheet("""
                 QPushButton {
-                    background-color: #0d9488;
-                    color: white;
+                    background-color: #e5e7eb;
+                    color: #1a1a2e;
                     border: none;
                     padding: 6px 16px;
                     font-weight: bold;
@@ -122,15 +122,15 @@ class ToggleButton(QPushButton):
         else:
             self.setStyleSheet("""
                 QPushButton {
-                    background-color: #134e4a;
-                    color: #2dd4bf;
-                    border: 1px solid #0d9488;
+                    background-color: #1a1a2e;
+                    color: #9ca3af;
+                    border: 1px solid #374151;
                     padding: 6px 16px;
                     font-weight: 500;
                     font-size: 14px;
                     border-radius: 5px;
                 }
-                QPushButton:hover { background-color: #0f766e; border-color: #0d9488; }
+                QPushButton:hover { background-color: #252536; color: #e5e7eb; }
             """)
 
 
@@ -222,7 +222,7 @@ class MultimeterPanel(QWidget):
         # Title
         title = QLabel("LIVE MULTIMETER — Sub-Femtoamp")
         title.setFont(QFont("Inter", 24, QFont.Bold))
-        title.setStyleSheet("color: #2dd4bf;")
+        title.setStyleSheet("color: #e5e7eb; font-weight: bold;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
@@ -331,27 +331,28 @@ class MultimeterPanel(QWidget):
         # Buttons
         btn_layout = QHBoxLayout()
 
-        self.start_btn = QPushButton("▶ START")
+        self.start_btn = QPushButton("START")
         self.start_btn.setStyleSheet("""
             QPushButton {
-                background-color: #28a745; color: white;
-                font-family: 'Inter'; font-size: 22px; font-weight: bold;
-                padding: 18px 45px; border-radius: 5px;
+                background-color: #e5e7eb; color: #1a1a2e;
+                font-family: 'Inter'; font-size: 14px; font-weight: bold;
+                padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #218838; }
+            QPushButton:hover { background-color: #ffffff; }
+            QPushButton:disabled { background-color: #252536; color: #4b5563; }
         """)
         self.start_btn.clicked.connect(self.start_live)
         btn_layout.addWidget(self.start_btn)
 
-        self.stop_btn = QPushButton("■ STOP")
+        self.stop_btn = QPushButton("STOP")
         self.stop_btn.setStyleSheet("""
             QPushButton {
-                background-color: #dc3545; color: white;
-                font-family: 'Inter'; font-size: 22px; font-weight: bold;
-                padding: 18px 45px; border-radius: 5px;
+                background-color: #374151; color: #e5e7eb;
+                font-family: 'Inter'; font-size: 14px; font-weight: bold;
+                padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #c82333; }
-            QPushButton:disabled { background-color: #374151; color: #4b5563; }
+            QPushButton:hover { background-color: #4b5563; }
+            QPushButton:disabled { background-color: #252536; color: #4b5563; }
         """)
         self.stop_btn.clicked.connect(self.stop_live)
         self.stop_btn.setEnabled(False)
@@ -362,43 +363,43 @@ class MultimeterPanel(QWidget):
         # Recording buttons
         record_layout = QHBoxLayout()
 
-        self.record_btn = QPushButton("⏺ RECORD")
+        self.record_btn = QPushButton("RECORD")
         self.record_btn.setStyleSheet("""
             QPushButton {
-                background-color: #e83e8c; color: white;
-                font-family: 'Inter'; font-size: 20px; font-weight: bold;
-                padding: 14px 35px; border-radius: 5px;
+                background-color: #374151; color: #e5e7eb;
+                font-family: 'Inter'; font-size: 14px; font-weight: bold;
+                padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #d63384; }
-            QPushButton:disabled { background-color: #374151; color: #4b5563; }
+            QPushButton:hover { background-color: #4b5563; }
+            QPushButton:disabled { background-color: #252536; color: #4b5563; }
         """)
         self.record_btn.clicked.connect(self._start_recording)
         self.record_btn.setEnabled(False)
         record_layout.addWidget(self.record_btn)
 
-        self.pause_record_btn = QPushButton("⏸ PAUSE")
+        self.pause_record_btn = QPushButton("PAUSE")
         self.pause_record_btn.setStyleSheet("""
             QPushButton {
-                background-color: #fd7e14; color: white;
-                font-family: 'Inter'; font-size: 20px; font-weight: bold;
-                padding: 14px 35px; border-radius: 5px;
+                background-color: #374151; color: #e5e7eb;
+                font-family: 'Inter'; font-size: 14px; font-weight: bold;
+                padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #e67312; }
-            QPushButton:disabled { background-color: #374151; color: #4b5563; }
+            QPushButton:hover { background-color: #4b5563; }
+            QPushButton:disabled { background-color: #252536; color: #4b5563; }
         """)
         self.pause_record_btn.clicked.connect(self._pause_recording)
         self.pause_record_btn.setEnabled(False)
         record_layout.addWidget(self.pause_record_btn)
 
-        self.save_record_btn = QPushButton("💾 SAVE CSV")
+        self.save_record_btn = QPushButton("SAVE CSV")
         self.save_record_btn.setStyleSheet("""
             QPushButton {
-                background-color: #17a2b8; color: white;
-                font-family: 'Inter'; font-size: 20px; font-weight: bold;
-                padding: 14px 35px; border-radius: 5px;
+                background-color: #374151; color: #e5e7eb;
+                font-family: 'Inter'; font-size: 14px; font-weight: bold;
+                padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #138496; }
-            QPushButton:disabled { background-color: #374151; color: #4b5563; }
+            QPushButton:hover { background-color: #4b5563; }
+            QPushButton:disabled { background-color: #252536; color: #4b5563; }
         """)
         self.save_record_btn.clicked.connect(self._save_recording)
         self.save_record_btn.setEnabled(False)
@@ -865,15 +866,15 @@ class SweepListWidget(QGroupBox):
         self.table.setMaximumHeight(200)
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: #1e2a45;
+                background-color: #202030;
                 color: #e5e7eb;
                 gridline-color: #374151;
                 font-size: 13px;
             }
             QTableWidget::item { color: #e5e7eb; }
             QHeaderView::section {
-                background-color: #134e4a;
-                color: #2dd4bf;
+                background-color: #252536;
+                color: #e5e7eb;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 6px;
@@ -930,14 +931,14 @@ class SweepListWidget(QGroupBox):
         layout.addLayout(btn_layout2)
 
         wave_layout = QHBoxLayout()
-        wave_btn = QPushButton("🌊 Wave Generator")
+        wave_btn = QPushButton("Wave Generator")
         wave_btn.setStyleSheet("""
             QPushButton {
-                background-color: #17a2b8; color: white;
-                font-family: 'Inter'; font-size: 15px;
-                font-weight: bold; padding: 10px 20px;
+                background-color: #374151; color: #e5e7eb;
+                font-family: 'Inter'; font-size: 14px;
+                font-weight: 600; padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #138496; }
+            QPushButton:hover { background-color: #4b5563; }
         """)
         wave_btn.clicked.connect(self.wave_generator_requested.emit)
         wave_layout.addWidget(wave_btn)
@@ -1129,16 +1130,16 @@ class DataTableWidget(QTableWidget):
         self.setAlternatingRowColors(True)
         self.setStyleSheet("""
             QTableWidget {
-                background-color: #1e2a45;
-                alternate-background-color: #16213e;
+                background-color: #202030;
+                alternate-background-color: #1e1e30;
                 color: #e5e7eb;
                 gridline-color: #374151;
                 font-size: 13px;
             }
             QTableWidget::item { color: #e5e7eb; padding: 4px; }
             QHeaderView::section {
-                background-color: #134e4a;
-                color: #2dd4bf;
+                background-color: #252536;
+                color: #e5e7eb;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 8px 5px;
@@ -1181,7 +1182,7 @@ class ConnectionDialog(QDialog):
         # Title
         title = QLabel("Keithley 6430 — RS-232 Connection")
         title.setFont(QFont("Inter", 16, QFont.Bold))
-        title.setStyleSheet("color: #2dd4bf;")
+        title.setStyleSheet("color: #e5e7eb;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
@@ -1203,21 +1204,21 @@ class ConnectionDialog(QDialog):
 
         # Buttons
         btn_layout = QHBoxLayout()
-        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self._refresh)
         btn_layout.addWidget(refresh_btn)
 
-        auto_detect_btn = QPushButton("🔍 Auto-Detect")
+        auto_detect_btn = QPushButton("Auto-Detect")
         auto_detect_btn.setStyleSheet(
-            "background-color: #0d9488; color: white; font-weight: bold; "
-            "font-size: 14px; padding: 10px;"
+            "background-color: #374151; color: #e5e7eb; font-weight: 600; "
+            "font-size: 14px; padding: 8px 20px; border-radius: 6px; border: none;"
         )
         auto_detect_btn.clicked.connect(self._auto_detect)
         btn_layout.addWidget(auto_detect_btn)
 
         connect_btn = QPushButton("Connect")
         connect_btn.setStyleSheet(
-            "background-color: #28a745; color: white; font-family: 'Inter'; "
+            "font-family: 'Inter'; "
             "font-size: 14px; font-weight: bold; padding: 10px;"
         )
         connect_btn.clicked.connect(self._connect)
@@ -1268,10 +1269,10 @@ class ConnectionDialog(QDialog):
 
         layout.addWidget(sim_group)
 
-        simulate_btn = QPushButton("🎮 Start Simulation")
+        simulate_btn = QPushButton("Start Simulation")
         simulate_btn.setStyleSheet(
-            "background-color: #17a2b8; color: white; font-family: 'Inter'; "
-            "font-weight: bold; padding: 14px; font-size: 18px;"
+            "background-color: #e5e7eb; color: #1a1a2e; font-family: 'Inter'; "
+            "font-weight: 600; padding: 8px 20px; font-size: 14px; border-radius: 6px; border: none;"
         )
         simulate_btn.clicked.connect(self._simulate)
         layout.addWidget(simulate_btn)
@@ -1293,7 +1294,7 @@ class ConnectionDialog(QDialog):
 
     def _auto_detect(self):
         self.status_label.setText("Scanning for Keithley 6430... please wait...")
-        self.status_label.setStyleSheet("color: #0d9488; font-weight: bold;")
+        self.status_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
         QApplication.processEvents()
 
         result = Keithley6430.auto_detect(timeout=2.0)
@@ -1301,7 +1302,7 @@ class ConnectionDialog(QDialog):
         if result:
             port, baud = result
             self.status_label.setText(f"Found Keithley 6430 on {port} at {baud} baud!")
-            self.status_label.setStyleSheet("color: #22c55e; font-weight: bold;")
+            self.status_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
             self.baud_combo.setCurrentText(str(baud))
             # Select the port in the list
             for i in range(self.port_list.count()):
@@ -1312,7 +1313,7 @@ class ConnectionDialog(QDialog):
             self.status_label.setText(
                 "Keithley 6430 not found. Check connections, power, and try manual selection."
             )
-            self.status_label.setStyleSheet("color: #dc2626; font-weight: bold;")
+            self.status_label.setStyleSheet("color: #9ca3af; font-weight: bold;")
 
     def _connect(self):
         items = self.port_list.selectedItems()
@@ -1356,7 +1357,7 @@ class SafetyDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        layout.addWidget(QLabel("⚠️ SAFETY LIMITS — Protect your device!"))
+        layout.addWidget(QLabel("SAFETY LIMITS — Protect your device!"))
         layout.addWidget(QLabel(
             "K6430 absolute limits: ±105V, ±105mA.\n"
             "Set conservative limits to protect your DUT."
@@ -1610,7 +1611,7 @@ class WaveToolDialog(QDialog):
 
         preview_btn = QPushButton("Preview Waveform")
         preview_btn.setStyleSheet(
-            "background-color: #17a2b8; color: white; font-family: 'Inter'; "
+            "background-color: #374151; color: #e5e7eb; font-family: 'Inter'; "
             "font-size: 15px; padding: 12px; font-weight: bold;"
         )
         preview_btn.clicked.connect(self._preview)
@@ -1633,7 +1634,7 @@ class WaveToolDialog(QDialog):
         btn_layout = QHBoxLayout()
         generate_btn = QPushButton("Generate && Import to Sweep List")
         generate_btn.setStyleSheet(
-            "background-color: #28a745; color: white; font-family: 'Inter'; "
+            "background-color: #e5e7eb; color: #1a1a2e; font-family: 'Inter'; "
             "font-size: 15px; padding: 12px; font-weight: bold;"
         )
         generate_btn.clicked.connect(self._generate_and_accept)
@@ -1719,7 +1720,7 @@ class WaveToolDialog(QDialog):
                 f"Duration: {t[-1]:.2f}s | "
                 f"Output: {min(final_values):.4e} to {max(final_values):.4e} {export_unit}"
             )
-            self.info_label.setStyleSheet("color: #0d9488; font-weight: bold;")
+            self.info_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
             self.waveform_plot.setData(self.time_values, self.waveform_values)
             self.preview_graph.setLabel('left', f'Output ({export_unit})')
 
@@ -1865,13 +1866,12 @@ class Keithley6430App(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 10)
 
-        # Gradient header bar (teal → purple for 6430 branding)
+        # Header bar
         header = QFrame()
-        header.setFixedHeight(50)
+        header.setFixedHeight(44)
         header.setStyleSheet("""
             QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #0d9488, stop:0.5 #6d28d9, stop:1 #d97706);
+                background-color: #252536;
             }
         """)
         header_layout = QHBoxLayout(header)
@@ -1879,7 +1879,7 @@ class Keithley6430App(QMainWindow):
 
         header_title = QLabel(f"{__app_name__} — Sub-Femtoamp")
         header_title.setStyleSheet(
-            "color: white; font-size: 22px; font-weight: bold; "
+            "color: white; font-size: 18px; font-weight: bold; "
             "font-family: 'Inter'; background: transparent;"
         )
         header_layout.addWidget(header_title)
@@ -1887,7 +1887,7 @@ class Keithley6430App(QMainWindow):
 
         version_label = QLabel(f"v{__version__} | {__author__}, Hayun Group, BGU")
         version_label.setStyleSheet(
-            "color: rgba(255,255,255,0.9); font-size: 12px; "
+            "color: rgba(255,255,255,0.9); font-size: 11px; "
             "font-family: 'Inter'; background: transparent;"
         )
         header_layout.addWidget(version_label)
@@ -1897,51 +1897,51 @@ class Keithley6430App(QMainWindow):
         # Content area
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(15, 10, 15, 0)
+        content_layout.setContentsMargins(20, 15, 20, 10)
 
         # Top toolbar
         toolbar = QHBoxLayout()
 
-        connect_btn = QPushButton("🔌 Connect (RS-232)")
+        connect_btn = QPushButton("Connect (RS-232)")
         connect_btn.clicked.connect(self._show_connection_dialog)
         toolbar.addWidget(connect_btn)
 
         self.connection_label = QLabel("Disconnected")
         self.connection_label.setStyleSheet(
-            "color: #dc2626; font-family: 'Inter'; font-weight: bold; font-size: 15px;"
+            "color: #9ca3af; font-family: 'Inter'; font-weight: bold; font-size: 15px;"
         )
         toolbar.addWidget(self.connection_label)
 
         toolbar.addStretch()
 
-        self.start_btn = QPushButton("▶ START SWEEP")
+        self.start_btn = QPushButton("START SWEEP")
         self.start_btn.setStyleSheet("""
             QPushButton {
-                background-color: #28a745; color: white;
-                font-family: 'Inter'; font-size: 18px; font-weight: bold;
-                padding: 12px 35px; border-radius: 5px;
+                background-color: #e5e7eb; color: #1a1a2e;
+                font-family: 'Inter'; font-size: 14px; font-weight: bold;
+                padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #218838; }
-            QPushButton:disabled { background-color: #374151; color: #4b5563; }
+            QPushButton:hover { background-color: #ffffff; }
+            QPushButton:disabled { background-color: #252536; color: #4b5563; }
         """)
         self.start_btn.clicked.connect(self.start_sweep)
         toolbar.addWidget(self.start_btn)
 
-        self.stop_btn = QPushButton("■ STOP")
+        self.stop_btn = QPushButton("STOP")
         self.stop_btn.setStyleSheet("""
             QPushButton {
-                background-color: #dc3545; color: white;
-                font-family: 'Inter'; font-size: 18px; font-weight: bold;
-                padding: 12px 35px; border-radius: 5px;
+                background-color: #374151; color: #e5e7eb;
+                font-family: 'Inter'; font-size: 14px; font-weight: bold;
+                padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #c82333; }
-            QPushButton:disabled { background-color: #374151; color: #4b5563; }
+            QPushButton:hover { background-color: #4b5563; }
+            QPushButton:disabled { background-color: #252536; color: #4b5563; }
         """)
         self.stop_btn.clicked.connect(self.stop_sweep)
         self.stop_btn.setEnabled(False)
         toolbar.addWidget(self.stop_btn)
 
-        export_btn = QPushButton("💾 Export CSV")
+        export_btn = QPushButton("Export CSV")
         export_btn.clicked.connect(self.export_csv)
         toolbar.addWidget(export_btn)
 
@@ -1952,7 +1952,7 @@ class Keithley6430App(QMainWindow):
 
         # Tab 1: Multimeter
         self.multimeter_panel = MultimeterPanel(self)
-        tabs.addTab(self.multimeter_panel, "🔬 Multimeter")
+        tabs.addTab(self.multimeter_panel, "Multimeter")
 
         # Tab 2: I-V Sweep
         sweep_tab = QWidget()
@@ -2057,7 +2057,7 @@ class Keithley6430App(QMainWindow):
         sweep_splitter.setStretchFactor(2, 3)
         sweep_outer.addWidget(sweep_splitter)
 
-        tabs.addTab(sweep_tab, "📊 I-V Sweep")
+        tabs.addTab(sweep_tab, "I-V Sweep")
 
         content_layout.addWidget(tabs)
         layout.addWidget(content)
@@ -2108,7 +2108,7 @@ class Keithley6430App(QMainWindow):
             self.smu.disconnect()
             self.smu = None
         self.connection_label.setText("Disconnected")
-        self.connection_label.setStyleSheet("color: #dc2626; font-weight: bold; font-size: 15px;")
+        self.connection_label.setStyleSheet("color: #9ca3af; font-weight: bold; font-size: 15px;")
         self.status.showMessage("Disconnected")
 
     def _reset_instrument(self):
@@ -2295,11 +2295,11 @@ class Keithley6430App(QMainWindow):
             else:
                 res_str = f"{simulation_resistance:.0f}Ω"
             self.connection_label.setText(f"SIM ({res_str})")
-            self.connection_label.setStyleSheet("color: #17a2b8; font-weight: bold;")
+            self.connection_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
         else:
             port_info = self.smu.get_serial_info()
             self.connection_label.setText(f"Connected ({port_info['port']} @ {port_info['baud_rate']})")
-            self.connection_label.setStyleSheet("color: #22c55e; font-weight: bold;")
+            self.connection_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
 
         self.status.showMessage("Connected to Keithley 6430")
 
@@ -2602,10 +2602,10 @@ def main():
     app.setPalette(LightPalette())
     app.setStyle('Fusion')
 
-    font = QFont("Inter", 13)
+    font = QFont("Inter", 15)
     app.setFont(font)
 
-    # Global stylesheet with dark mode teal/amber accents for 6430 branding
+    # Global stylesheet with dark mode greyscale theme
     app.setStyleSheet("""
         * {
             font-family: 'Inter', sans-serif;
@@ -2622,16 +2622,16 @@ def main():
         }
         QPushButton {
             font-size: 14px;
-            color: #2dd4bf;
-            background-color: #134e4a;
-            border: 1px solid #0d9488;
+            color: #e5e7eb;
+            background-color: #1a1a2e;
+            border: 1px solid #2a2a3e;
             padding: 6px 14px;
             border-radius: 5px;
             font-weight: 500;
         }
         QPushButton:hover {
-            background-color: #0f766e;
-            border-color: #0d9488;
+            background-color: #252536;
+            border-color: #9ca3af;
         }
         QPushButton:disabled {
             background-color: #374151;
@@ -2644,45 +2644,46 @@ def main():
             font-weight: 500;
         }
         QGroupBox {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: bold;
             color: #e5e7eb;
-            border: 2px solid #374151;
+            border: 1px solid #2a2a3e;
             border-radius: 8px;
             margin-top: 16px;
-            padding-top: 12px;
+            padding: 16px;
+            padding-top: 14px;
             background-color: transparent;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
             left: 12px;
-            padding: 0 10px;
-            color: #2dd4bf;
+            padding: 0 8px;
+            color: #e5e7eb;
             background-color: #1a1a2e;
-            font-size: 18px;
+            font-size: 14px;
             font-weight: bold;
         }
         QTableWidget, QListWidget {
             font-size: 13px;
             color: #e5e7eb;
-            background-color: #1e2a45;
+            background-color: #202030;
             border: 1px solid #374151;
         }
         QTableWidget::item, QListWidget::item {
             color: #e5e7eb;
         }
         QHeaderView::section {
-            background-color: #134e4a;
-            color: #2dd4bf;
+            background-color: #252536;
+            color: #e5e7eb;
             font-weight: bold;
             padding: 8px;
             border: 1px solid #374151;
         }
         QToolTip {
             font-size: 13px;
-            background-color: #134e4a;
+            background-color: #252536;
             color: #ffffff;
-            border: 1px solid #2dd4bf;
+            border: 1px solid #374151;
             padding: 6px;
         }
         QMenuBar {
@@ -2692,10 +2693,10 @@ def main():
             border-bottom: 1px solid #374151;
         }
         QMenuBar::item { color: #e5e7eb; }
-        QMenuBar::item:selected { background-color: #0d9488; }
+        QMenuBar::item:selected { background-color: #374151; }
         QMenu {
             font-size: 14px;
-            background-color: #16213e;
+            background-color: #1e1e30;
             color: #e5e7eb;
             border: 1px solid #374151;
         }
@@ -2704,55 +2705,60 @@ def main():
             padding: 6px 20px;
         }
         QMenu::item:selected {
-            background-color: #0d9488;
+            background-color: #374151;
             color: #ffffff;
         }
         QTabWidget::pane {
-            border: 1px solid #374151;
+            border: 1px solid #2a2a3e;
             background-color: #1a1a2e;
+            border-top: none;
         }
         QTabBar::tab {
-            font-size: 15px;
-            padding: 12px 20px;
-            background-color: #78350f;
-            color: #f59e0b;
-            border: 1px solid #374151;
+            font-size: 14px;
+            padding: 10px 24px;
+            background-color: #202030;
+            color: #9ca3af;
+            border: 1px solid #2a2a3e;
             border-bottom: none;
             margin-right: 2px;
             font-weight: 500;
         }
         QTabBar::tab:selected {
             background-color: #1a1a2e;
-            color: #2dd4bf;
+            color: #e5e7eb;
             font-weight: bold;
-            border-color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+            border-color: #2a2a3e;
         }
-        QTabBar::tab:hover { background-color: #1f3460; }
+        QTabBar::tab:hover {
+            background-color: #252536;
+            color: #e5e7eb;
+        }
         QComboBox {
             font-size: 14px;
             color: #e5e7eb;
-            background-color: #1e2a45;
-            border: 1px solid #f59e0b60;
+            background-color: #202030;
+            border: 1px solid #374151;
             padding: 6px 10px;
             border-radius: 5px;
         }
-        QComboBox:hover { border-color: #f59e0b; }
+        QComboBox:hover { border-color: #9ca3af; }
         QComboBox QAbstractItemView {
-            background-color: #1e2a45;
+            background-color: #202030;
             color: #e5e7eb;
-            selection-background-color: #0d9488;
+            selection-background-color: #374151;
             selection-color: #ffffff;
         }
         QComboBox::drop-down {
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 25px;
-            border-left: 1px solid #f59e0b60;
+            border-left: 1px solid #374151;
             border-top-right-radius: 4px;
             border-bottom-right-radius: 4px;
-            background-color: #1e2a45;
+            background-color: #202030;
         }
-        QComboBox::drop-down:hover { background-color: #1f3460; }
+        QComboBox::drop-down:hover { background-color: #252536; }
         QComboBox::down-arrow {
             width: 12px;
             height: 12px;
@@ -2765,35 +2771,35 @@ def main():
         QSpinBox, QDoubleSpinBox {
             font-size: 14px;
             color: #e5e7eb;
-            background-color: #1e2a45;
-            border: 1px solid #f59e0b60;
+            background-color: #202030;
+            border: 1px solid #374151;
             padding: 6px 8px;
             padding-right: 24px;
             border-radius: 5px;
             min-width: 60px;
         }
-        QSpinBox:hover, QDoubleSpinBox:hover { border-color: #f59e0b; }
+        QSpinBox:hover, QDoubleSpinBox:hover { border-color: #9ca3af; }
         QSpinBox::up-button, QDoubleSpinBox::up-button {
             subcontrol-origin: border;
             subcontrol-position: top right;
             width: 22px;
-            border-left: 1px solid #f59e0b60;
-            border-bottom: 1px solid #f59e0b60;
+            border-left: 1px solid #374151;
+            border-bottom: 1px solid #374151;
             border-top-right-radius: 4px;
-            background-color: #1e2a45;
+            background-color: #202030;
         }
-        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover { background-color: #1f3460; }
+        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover { background-color: #252536; }
         QSpinBox::down-button, QDoubleSpinBox::down-button {
             subcontrol-origin: border;
             subcontrol-position: bottom right;
             width: 22px;
-            border-left: 1px solid #f59e0b60;
+            border-left: 1px solid #374151;
             border-bottom-right-radius: 4px;
-            background-color: #1e2a45;
+            background-color: #202030;
         }
-        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background-color: #1f3460; }
+        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background-color: #252536; }
         QScrollBar:vertical {
-            background-color: #16213e;
+            background-color: #1e1e30;
             width: 12px;
             border-radius: 6px;
         }
@@ -2805,7 +2811,7 @@ def main():
         QScrollBar::handle:vertical:hover { background-color: #4b5563; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         QScrollBar:horizontal {
-            background-color: #16213e;
+            background-color: #1e1e30;
             height: 12px;
             border-radius: 6px;
         }
@@ -2818,19 +2824,19 @@ def main():
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
         QStatusBar {
             background-color: #1a1a2e;
-            color: #2dd4bf;
+            color: #9ca3af;
             border-top: 1px solid #374151;
         }
         QProgressBar {
             border: 1px solid #374151;
             border-radius: 4px;
-            background-color: #134e4a;
+            background-color: #252536;
             text-align: center;
             color: #e5e7eb;
             font-weight: bold;
         }
         QProgressBar::chunk {
-            background-color: #0d9488;
+            background-color: #e5e7eb;
             border-radius: 3px;
         }
     """)

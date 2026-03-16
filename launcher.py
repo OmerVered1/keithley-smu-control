@@ -129,7 +129,7 @@ class LauncherWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(__app_name__)
-        self.setFixedSize(1100, 520)
+        self.setMinimumSize(1100, 520)
         self._instrument_windows = []
         self._setup_ui()
 
@@ -275,7 +275,7 @@ def main():
     app.setPalette(LauncherPalette())
     app.setStyle('Fusion')
 
-    font = QFont("Inter", 13)
+    font = QFont("Inter", 15)
     app.setFont(font)
 
     app.setStyleSheet("""
