@@ -204,26 +204,24 @@ class LauncherWindow(QMainWindow):
             app = QApplication.instance()
 
             if instrument == "2450":
-                from keithley2450_pyqt import Keithley2450App, LightPalette as K2450Palette
-                # Import stylesheet from the module
-                import keithley2450_pyqt
-                palette = K2450Palette()
-                app.setPalette(palette)
-                # Read stylesheet from main() — we need to get it
-                # The 2450 doesn't export its stylesheet as a variable, so re-apply it inline
+                from keithley2450_pyqt import Keithley2450App, LightPalette as K2450Palette, GLOBAL_STYLESHEET
+                app.setPalette(K2450Palette())
+                app.setStyleSheet(GLOBAL_STYLESHEET)
+                app.setFont(QFont("Inter", 15))
                 window = Keithley2450App()
 
             elif instrument == "6430":
-                from keithley6430_pyqt import Keithley6430App, LightPalette as K6430Palette
-                palette = K6430Palette()
-                app.setPalette(palette)
+                from keithley6430_pyqt import Keithley6430App, LightPalette as K6430Palette, GLOBAL_STYLESHEET
+                app.setPalette(K6430Palette())
+                app.setStyleSheet(GLOBAL_STYLESHEET)
+                app.setFont(QFont("Inter", 15))
                 window = Keithley6430App()
 
             elif instrument == "2602b":
                 from keithley2602b_pyqt import Keithley2602BApp, LightPalette as K2602BPalette, GLOBAL_STYLESHEET
-                palette = K2602BPalette()
-                app.setPalette(palette)
+                app.setPalette(K2602BPalette())
                 app.setStyleSheet(GLOBAL_STYLESHEET)
+                app.setFont(QFont("Inter", 15))
                 window = Keithley2602BApp()
 
             else:
@@ -275,14 +273,14 @@ def main():
     app.setPalette(LauncherPalette())
     app.setStyle('Fusion')
 
-    font = QFont("Inter", 15)
-    app.setFont(font)
-
     app.setStyleSheet("""
         QMainWindow {
             background-color: #11111b;
         }
     """)
+
+    # Set Inter font AFTER stylesheet — on macOS, setStyleSheet() resets app font
+    app.setFont(QFont("Inter", 15))
 
     launcher = LauncherWindow()
     launcher.show()

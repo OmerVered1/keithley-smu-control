@@ -2623,14 +2623,8 @@ class Keithley6430App(QMainWindow):
         event.accept()
 
 
-def main():
-    app = QApplication(sys.argv)
-    app.setPalette(LightPalette())
-    app.setStyle('Fusion')
-
-    # Global stylesheet with dark mode greyscale theme
-    # NOTE: app.setFont() must come AFTER setStyleSheet() on macOS
-    app.setStyleSheet("""
+# Global stylesheet for dark theme
+GLOBAL_STYLESHEET = """
         QMainWindow, QWidget {
             background-color: #1a1a2e;
             color: #e5e7eb;
@@ -2857,7 +2851,17 @@ def main():
             background-color: #e5e7eb;
             border-radius: 3px;
         }
-    """)
+"""
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setPalette(LightPalette())
+    app.setStyle('Fusion')
+
+    # Global stylesheet with dark mode greyscale theme
+    # NOTE: app.setFont() must come AFTER setStyleSheet() on macOS
+    app.setStyleSheet(GLOBAL_STYLESHEET)
 
     # Set Inter font AFTER stylesheet — on macOS, setStyleSheet() resets app font
     app.setFont(QFont("Inter", 15))
