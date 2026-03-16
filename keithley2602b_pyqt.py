@@ -2556,9 +2556,6 @@ class Keithley2602BApp(QMainWindow):
 
 # Global stylesheet for dark theme with green/amber accents
 GLOBAL_STYLESHEET = """
-    * {
-        color: #e5e7eb;
-    }
     QMainWindow, QWidget {
         background-color: #1a1a2e;
         color: #e5e7eb;
@@ -2826,10 +2823,10 @@ def main():
     app.setPalette(LightPalette())
     app.setStyle('Fusion')
 
-    font = QFont("Inter", 15)
-    app.setFont(font)
-
     app.setStyleSheet(GLOBAL_STYLESHEET)
+
+    # Set Inter font AFTER stylesheet — on macOS, setStyleSheet() resets app font
+    app.setFont(QFont("Inter", 15))
 
     window = Keithley2602BApp()
     window.show()

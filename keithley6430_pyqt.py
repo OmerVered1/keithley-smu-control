@@ -2628,14 +2628,9 @@ def main():
     app.setPalette(LightPalette())
     app.setStyle('Fusion')
 
-    font = QFont("Inter", 15)
-    app.setFont(font)
-
     # Global stylesheet with dark mode greyscale theme
+    # NOTE: app.setFont() must come AFTER setStyleSheet() on macOS
     app.setStyleSheet("""
-        * {
-            color: #e5e7eb;
-        }
         QMainWindow, QWidget {
             background-color: #1a1a2e;
             color: #e5e7eb;
@@ -2863,6 +2858,9 @@ def main():
             border-radius: 3px;
         }
     """)
+
+    # Set Inter font AFTER stylesheet — on macOS, setStyleSheet() resets app font
+    app.setFont(QFont("Inter", 15))
 
     window = Keithley6430App()
     window.show()

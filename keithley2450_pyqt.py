@@ -2693,16 +2693,10 @@ def main():
     app = QApplication(sys.argv)
     app.setPalette(LightPalette())
     app.setStyle('Fusion')
-    
-    # Set Inter font globally with larger size
-    font = QFont("Inter", 15)
-    app.setFont(font)
-    
-    # Global stylesheet for consistent font and dark theme with blue/orange accents
+
+    # Global stylesheet for consistent dark theme
+    # NOTE: app.setFont() must come AFTER setStyleSheet() on macOS
     app.setStyleSheet("""
-        * {
-            color: #e5e7eb;
-        }
         QMainWindow, QWidget {
             background-color: #1a1a2e;
             color: #e5e7eb;
@@ -2966,10 +2960,13 @@ def main():
             border: 1px solid #2a2a3e;
         }
     """)
-    
+
+    # Set Inter font AFTER stylesheet — on macOS, setStyleSheet() resets app font
+    app.setFont(QFont("Inter", 15))
+
     window = Keithley2450App()
     window.show()
-    
+
     sys.exit(app.exec_())
 
 
