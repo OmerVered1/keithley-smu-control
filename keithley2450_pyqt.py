@@ -214,7 +214,7 @@ class MultimeterPanel(QWidget):
         
         # Title
         title = QLabel("LIVE MULTIMETER")
-        title.setStyleSheet("color: #e5e7eb; font-family: 'Inter'; font-size: 28pt; font-weight: bold;")
+        title.setFont(QFont("Inter", 28, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
@@ -2701,7 +2701,6 @@ def main():
     # Global stylesheet for consistent font and dark theme with blue/orange accents
     app.setStyleSheet("""
         * {
-            font-family: 'Inter', sans-serif;
             color: #e5e7eb;
         }
         QMainWindow, QWidget {
@@ -2709,9 +2708,7 @@ def main():
             color: #e5e7eb;
         }
         QLabel {
-            font-size: 14px;
             color: #e5e7eb;
-            font-weight: 500;
         }
         QPushButton {
             font-size: 14px;
