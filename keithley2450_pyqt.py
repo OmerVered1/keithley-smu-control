@@ -252,10 +252,38 @@ class MultimeterPanel(QWidget):
         
         settings.addStretch()
         layout.addLayout(settings)
-        
+
+        # Instrument settings row
+        inst_row = QHBoxLayout()
+
+        inst_row.addWidget(QLabel("Terminals:"))
+        self.front_btn = ToggleButton("Front")
+        self.front_btn.clicked.connect(lambda: self._set_terminal("Front"))
+        inst_row.addWidget(self.front_btn)
+
+        self.rear_btn = ToggleButton("Rear")
+        self.rear_btn.set_selected(True)
+        self.rear_btn.clicked.connect(lambda: self._set_terminal("Rear"))
+        inst_row.addWidget(self.rear_btn)
+        self.terminal = "Rear"
+
+        inst_row.addWidget(QLabel("    Sense:"))
+        self.sense_2w = ToggleButton("2-Wire")
+        self.sense_2w.clicked.connect(lambda: self._set_sense("2-Wire"))
+        inst_row.addWidget(self.sense_2w)
+
+        self.sense_4w = ToggleButton("4-Wire")
+        self.sense_4w.set_selected(True)
+        self.sense_4w.clicked.connect(lambda: self._set_sense("4-Wire"))
+        inst_row.addWidget(self.sense_4w)
+        self.sense = "4-Wire"
+
+        inst_row.addStretch()
+        layout.addLayout(inst_row)
+
         # Digital displays
         displays = QGridLayout()
-        
+
         v_group = QGroupBox("Voltage")
         v_layout = QVBoxLayout(v_group)
         self.voltage_display = DigitalDisplay("V", 6)
@@ -416,11 +444,26 @@ class MultimeterPanel(QWidget):
             self.compliance.setRange(0.1, 200)
             self.compliance.setValue(20)
     
+    def _set_terminal(self, terminal):
+        self.terminal = terminal
+        self.front_btn.set_selected(terminal == "Front")
+        self.rear_btn.set_selected(terminal == "Rear")
+        if self.app.smu and self.app.smu._connected:
+            try:
+                self.app.smu.set_terminal(terminal.upper())
+            except Exception:
+                pass
+
+    def _set_sense(self, sense):
+        self.sense = sense
+        self.sense_2w.set_selected(sense == "2-Wire")
+        self.sense_4w.set_selected(sense == "4-Wire")
+
     def _update_rate_changed(self):
         rates = [1000, 200, 100, 50]
         if self.running:
             self.timer.setInterval(rates[self.update_rate.currentIndex()])
-    
+
     def start_live(self):
         if not self.app.smu or not self.app.smu._connected:
             QMessageBox.warning(self, "Not Connected", "Please connect to instrument first")
@@ -429,12 +472,15 @@ class MultimeterPanel(QWidget):
         try:
             source_val = self.source_value.value()
             compliance = self.compliance.value()
-            
+
+            # Apply terminal and sense settings
+            self.app.smu.set_terminal(self.terminal.upper())
+
             if self.source_type.currentText() == "Voltage":
                 self.app.smu.set_source_voltage(source_val, compliance_current=compliance)
             else:
                 self.app.smu.set_source_current(source_val, compliance_voltage=compliance)
-            
+
             self.app.smu.output_on()
             
             self.running = True

@@ -264,6 +264,23 @@ class MultimeterPanel(QWidget):
         settings.addStretch()
         layout.addLayout(settings)
 
+        # Instrument settings row
+        inst_row = QHBoxLayout()
+
+        inst_row.addWidget(QLabel("Sense:"))
+        self.sense_2w = ToggleButton("2-Wire")
+        self.sense_2w.set_selected(True)
+        self.sense_2w.clicked.connect(lambda: self._set_sense("2-Wire"))
+        inst_row.addWidget(self.sense_2w)
+
+        self.sense_4w = ToggleButton("4-Wire")
+        self.sense_4w.clicked.connect(lambda: self._set_sense("4-Wire"))
+        inst_row.addWidget(self.sense_4w)
+        self.sense = "2-Wire"
+
+        inst_row.addStretch()
+        layout.addLayout(inst_row)
+
         # Digital displays
         displays = QGridLayout()
 
@@ -430,6 +447,11 @@ class MultimeterPanel(QWidget):
         rates = [1000, 200, 100, 50]
         if self.running:
             self.timer.setInterval(rates[self.update_rate.currentIndex()])
+
+    def _set_sense(self, sense):
+        self.sense = sense
+        self.sense_2w.set_selected(sense == "2-Wire")
+        self.sense_4w.set_selected(sense == "4-Wire")
 
     def update_channel_display(self):
         """Update channel indicator based on app's current channel"""
