@@ -215,8 +215,8 @@ class MultimeterPanel(QWidget):
         layout.setSpacing(20)
 
         # Title
-        title = QLabel("LIVE MULTIMETER")
-        title.setFont(QFont("Inter", 28, QFont.Bold))
+        title = QLabel("Live Multimeter")
+        title.setFont(QFont("Google Sans", 28, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
