@@ -1968,7 +1968,7 @@ class Keithley2450App(QMainWindow):
         header_layout.addWidget(header_title)
         header_layout.addStretch()
 
-        version_label = QLabel(f"v{__version__} | Omer Vered, Hayun Group, BGU")
+        version_label = QLabel(f"v{__version__} Created by {__author__} with claude code")
         version_label.setStyleSheet("color: rgba(255,255,255,0.9); font-size: 11px; font-family: 'Inter'; background: transparent;")
         header_layout.addWidget(version_label)
         
