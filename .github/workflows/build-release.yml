@@ -1,0 +1,130 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller
+
+      - name: Build macOS app
+        run: |
+          pyinstaller \
+            --name "Keithley SMU Control Suite" \
+            --windowed \
+            --noconfirm \
+            --hidden-import keithley2450_pyqt \
+            --hidden-import keithley2450_driver \
+            --hidden-import keithley6430_pyqt \
+            --hidden-import keithley6430_driver \
+            --hidden-import keithley2602b_pyqt \
+            --hidden-import keithley2602b_driver \
+            --hidden-import serial.tools.list_ports \
+            --hidden-import pyvisa.resources \
+            launcher.py
+
+      - name: Zip macOS app
+        run: |
+          cd dist
+          zip -r "../Keithley-SMU-Control-Suite-macOS.zip" "Keithley SMU Control Suite.app"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: Keithley-SMU-Control-Suite-macOS.zip
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller
+
+      - name: Build Windows exe
+        run: |
+          pyinstaller `
+            --name "Keithley SMU Control Suite" `
+            --windowed `
+            --noconfirm `
+            --hidden-import keithley2450_pyqt `
+            --hidden-import keithley2450_driver `
+            --hidden-import keithley6430_pyqt `
+            --hidden-import keithley6430_driver `
+            --hidden-import keithley2602b_pyqt `
+            --hidden-import keithley2602b_driver `
+            --hidden-import serial.tools.list_ports `
+            --hidden-import pyvisa.resources `
+            launcher.py
+
+      - name: Zip Windows build
+        run: |
+          Compress-Archive -Path "dist\Keithley SMU Control Suite" -DestinationPath "Keithley-SMU-Control-Suite-Windows.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: Keithley-SMU-Control-Suite-Windows.zip
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-app
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Keithley SMU Control Suite ${{ github.ref_name }}
+          body: |
+            ## Keithley SMU Control Suite ${{ github.ref_name }}
+
+            Unified launcher for Keithley 2450, 6430, and 2602B SourceMeter instruments.
+
+            ### Downloads
+            - **macOS**: `Keithley-SMU-Control-Suite-macOS.zip` — extract and run the .app
+            - **Windows**: `Keithley-SMU-Control-Suite-Windows.zip` — extract and run the .exe
+
+            ### What's included
+            - Launcher with instrument selection
+            - Live Multimeter with recording
+            - I-V Sweep with configurable parameters
+            - Measurement range selection (Auto + manual)
+
+            Created by Omer Vered with Claude Code
+          files: |
+            Keithley-SMU-Control-Suite-macOS.zip
+            Keithley-SMU-Control-Suite-Windows.zip
