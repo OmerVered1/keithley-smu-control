@@ -214,7 +214,8 @@ class MultimeterPanel(QWidget):
         
         # Title
         title = QLabel("LIVE MULTIMETER")
-        title.setStyleSheet("color: #e5e7eb; font-family: 'Inter'; font-size: 24pt; font-weight: bold;")
+        title.setFont(QFont("Inter", 24, QFont.Bold))
+        title.setStyleSheet("color: #e5e7eb;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
