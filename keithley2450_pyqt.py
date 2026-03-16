@@ -215,7 +215,7 @@ class MultimeterPanel(QWidget):
         # Title
         title = QLabel("LIVE MULTIMETER")
         title.setFont(QFont("Inter", 24, QFont.Bold))
-        title.setStyleSheet("color: #e5e7eb; font-weight: bold;")
+        title.setStyleSheet("color: #e5e7eb; font-family: Inter; font-weight: bold;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
@@ -249,7 +249,17 @@ class MultimeterPanel(QWidget):
         self.compliance.setValue(0.1)
         self.compliance.setSuffix(" A")
         settings.addWidget(self.compliance)
-        
+
+        settings.addWidget(QLabel("V Range:"))
+        self.voltage_range = QComboBox()
+        self.voltage_range.addItems(["Auto", "200 mV", "2 V", "20 V", "200 V"])
+        settings.addWidget(self.voltage_range)
+
+        settings.addWidget(QLabel("I Range:"))
+        self.current_range = QComboBox()
+        self.current_range.addItems(["Auto", "10 nA", "100 nA", "1 µA", "10 µA", "100 µA", "1 mA", "10 mA", "100 mA", "1 A"])
+        settings.addWidget(self.current_range)
+
         settings.addStretch()
         layout.addLayout(settings)
 
@@ -481,6 +491,23 @@ class MultimeterPanel(QWidget):
                 self.app.smu.set_source_voltage(source_val, compliance_current=compliance)
             else:
                 self.app.smu.set_source_current(source_val, compliance_voltage=compliance)
+
+            # Apply measurement ranges
+            v_range = self.voltage_range.currentText()
+            if v_range == "Auto":
+                self.app.smu._write("SENS:VOLT:RANG:AUTO ON")
+            else:
+                range_map = {"200 mV": 0.2, "2 V": 2, "20 V": 20, "200 V": 200}
+                self.app.smu._write(f"SENS:VOLT:RANG {range_map[v_range]}")
+                self.app.smu._write("SENS:VOLT:RANG:AUTO OFF")
+
+            i_range = self.current_range.currentText()
+            if i_range == "Auto":
+                self.app.smu._write("SENS:CURR:RANG:AUTO ON")
+            else:
+                range_map = {"10 nA": 10e-9, "100 nA": 100e-9, "1 µA": 1e-6, "10 µA": 10e-6, "100 µA": 100e-6, "1 mA": 1e-3, "10 mA": 10e-3, "100 mA": 100e-3, "1 A": 1}
+                self.app.smu._write(f"SENS:CURR:RANG {range_map[i_range]}")
+                self.app.smu._write("SENS:CURR:RANG:AUTO OFF")
 
             self.app.smu.output_on()
             
