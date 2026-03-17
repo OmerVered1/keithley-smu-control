@@ -1189,7 +1189,23 @@ class ConnectionDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        layout.addWidget(QLabel("Connect to Real Instrument:"))
+        layout.addWidget(QLabel("Connect via LAN (IP Address):"))
+        lan_layout = QHBoxLayout()
+        self.ip_entry = QLineEdit()
+        self.ip_entry.setPlaceholderText("e.g. 192.168.1.100")
+        lan_layout.addWidget(self.ip_entry)
+        lan_connect_btn = QPushButton("Connect LAN")
+        lan_connect_btn.setStyleSheet("background-color: #28a745; color: white; font-weight: bold; padding: 8px 16px; border-radius: 6px; border: none;")
+        lan_connect_btn.clicked.connect(self._connect_lan)
+        lan_layout.addWidget(lan_connect_btn)
+        layout.addLayout(lan_layout)
+
+        line1 = QFrame()
+        line1.setFrameShape(QFrame.HLine)
+        line1.setStyleSheet("background-color: #374151;")
+        layout.addWidget(line1)
+
+        layout.addWidget(QLabel("Or select a discovered instrument:"))
         self.resource_list = QListWidget()
         self.resource_list.setStyleSheet("font-family: 'Inter'; font-size: 15px;")
         layout.addWidget(self.resource_list)
@@ -1252,6 +1268,18 @@ class ConnectionDialog(QDialog):
             self.resource_list.addItem(r)
             if "2602" in r or "05E6" in r.upper():
                 self.resource_list.item(self.resource_list.count() - 1).setSelected(True)
+
+    def _connect_lan(self):
+        ip = self.ip_entry.text().strip()
+        if not ip:
+            QMessageBox.warning(self, "No IP", "Please enter an IP address")
+            return
+        resource = f"TCPIP::{ip}::inst0::INSTR"
+        try:
+            self.app.connect_instrument(resource)
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Connection Error", str(e))
 
     def _connect(self):
         items = self.resource_list.selectedItems()
