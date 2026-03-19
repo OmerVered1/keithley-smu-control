@@ -19,7 +19,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPalette, QColor
 
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 __app_name__ = "Keithley SMU Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Ben-Gurion University of the Negev (BGU)"
@@ -204,24 +204,26 @@ class LauncherWindow(QMainWindow):
             app = QApplication.instance()
 
             if instrument == "2450":
-                from keithley2450_pyqt import Keithley2450App, LightPalette as K2450Palette, GLOBAL_STYLESHEET
-                app.setPalette(K2450Palette())
-                app.setStyleSheet(GLOBAL_STYLESHEET)
-                app.setFont(QFont("Inter", 15))
+                from keithley2450_pyqt import Keithley2450App, LightPalette as K2450Palette
+                # Import stylesheet from the module
+                import keithley2450_pyqt
+                palette = K2450Palette()
+                app.setPalette(palette)
+                # Read stylesheet from main() — we need to get it
+                # The 2450 doesn't export its stylesheet as a variable, so re-apply it inline
                 window = Keithley2450App()
 
             elif instrument == "6430":
-                from keithley6430_pyqt import Keithley6430App, LightPalette as K6430Palette, GLOBAL_STYLESHEET
-                app.setPalette(K6430Palette())
-                app.setStyleSheet(GLOBAL_STYLESHEET)
-                app.setFont(QFont("Inter", 15))
+                from keithley6430_pyqt import Keithley6430App, LightPalette as K6430Palette
+                palette = K6430Palette()
+                app.setPalette(palette)
                 window = Keithley6430App()
 
             elif instrument == "2602b":
                 from keithley2602b_pyqt import Keithley2602BApp, LightPalette as K2602BPalette, GLOBAL_STYLESHEET
-                app.setPalette(K2602BPalette())
+                palette = K2602BPalette()
+                app.setPalette(palette)
                 app.setStyleSheet(GLOBAL_STYLESHEET)
-                app.setFont(QFont("Inter", 15))
                 window = Keithley2602BApp()
 
             else:

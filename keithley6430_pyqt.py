@@ -49,7 +49,7 @@ from keithley6430_driver import (
 pg.setConfigOptions(antialias=True, background='#1a1a2e', foreground='#e5e7eb')
 
 # Version info
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 __app_name__ = "K6430 Control Suite"
 __app_subtitle__ = "Sub-Femtoamp Remote SourceMeter"
 __author__ = "Omer Vered"

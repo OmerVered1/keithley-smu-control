@@ -2,7 +2,7 @@
 K2450 Control Suite - Version Information
 """
 
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 __author__ = "Omer Vered"
 __organization__ = "Ben-Gurion University of the Negev (BGU)"
 __copyright__ = "Copyright 2026 Omer Vered, BGU"
