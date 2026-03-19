@@ -1849,7 +1849,12 @@ class Keithley2450App(QMainWindow):
         self.run_start_datetime = None  # When current run started
         self.auto_save_enabled = True
         self.auto_save_path = os.path.join(os.path.expanduser("~"), "Documents", "K2450_Data")
-        
+
+        # Live CSV streaming
+        self._live_csv_file = None
+        self._live_csv_writer = None
+        self._live_csv_path = None
+
         # Application settings
         self.settings = QSettings(__organization__, __app_name__)
         
@@ -2449,7 +2454,25 @@ class Keithley2450App(QMainWindow):
         self.progress.setMaximum(total)
         self.progress.setValue(0)
         self.progress_label.setText(f"0 / {total} | Est: --:--")
-        
+
+        # Open live CSV file for streaming
+        try:
+            os.makedirs(self.auto_save_path, exist_ok=True)
+            filename = self._generate_filename()
+            self._live_csv_path = os.path.join(self.auto_save_path, filename)
+            self._live_csv_file = open(self._live_csv_path, 'w', newline='')
+            self._live_csv_writer = csv.writer(self._live_csv_file)
+            self._live_csv_writer.writerow([f'# Run {self.run_number}'])
+            self._live_csv_writer.writerow([f'# Started: {self.run_start_datetime.strftime("%Y-%m-%d %H:%M:%S")}'])
+            self._live_csv_writer.writerow([])
+            self._live_csv_writer.writerow(['Index', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(W)'])
+            self._live_csv_file.flush()
+            self.status.showMessage(f"Saving to: {filename}")
+        except Exception as e:
+            print(f"Live CSV open error: {e}")
+            self._live_csv_file = None
+            self._live_csv_writer = None
+
         thread = threading.Thread(target=self._run_sweep, args=(sweep_values,))
         thread.daemon = True
         thread.start()
@@ -2595,7 +2618,23 @@ class Keithley2450App(QMainWindow):
         v_str = f"{point.voltage:.6f}V" if point.voltage else ""
         i_str = f"{point.current:.4e}A" if point.current else ""
         self.status.showMessage(f"Point {point.index}: {point.source_value:.4f} → {v_str} {i_str}")
-        
+
+        # Write row to live CSV
+        if self._live_csv_writer:
+            try:
+                self._live_csv_writer.writerow([
+                    point.index,
+                    point.computer_time,
+                    f"{point.timestamp:.6f}",
+                    f"{point.voltage:.9e}" if point.voltage else "",
+                    f"{point.current:.9e}" if point.current else "",
+                    f"{point.resistance:.9e}" if point.resistance else "",
+                    f"{point.power:.9e}" if point.power else ""
+                ])
+                self._live_csv_file.flush()
+            except Exception as e:
+                print(f"Live CSV write error: {e}")
+
         if not self.running:
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
@@ -2605,8 +2644,18 @@ class Keithley2450App(QMainWindow):
             self.progress_label.setText(f"Done: {self.total_sweep_points} pts in {mins:02d}:{secs:02d}")
             self.status.showMessage("Sweep completed")
             
-            # Auto-save if enabled
-            if self.auto_save_enabled and self.measurement_data:
+            # Close live CSV file
+            if self._live_csv_file:
+                try:
+                    self._live_csv_file.close()
+                except Exception:
+                    pass
+                filename = os.path.basename(self._live_csv_path) if self._live_csv_path else "unknown"
+                self.status.showMessage(f"Saved: {filename} ({len(self.measurement_data)} points)")
+                self._live_csv_file = None
+                self._live_csv_writer = None
+                self._live_csv_path = None
+            elif self.auto_save_enabled and self.measurement_data:
                 self._auto_save_csv()
     
     def stop_sweep(self):
