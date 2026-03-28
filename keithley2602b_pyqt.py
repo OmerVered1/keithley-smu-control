@@ -1462,15 +1462,24 @@ understand it, and agree to be bound by its terms and conditions."""
 
 
 class WaveToolDialog(QDialog):
-    """Wave Generator Tool - Creates waveforms for I-V sweeps"""
+    """Wave Generator Tool - Creates multi-segment waveforms for I-V sweeps"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Wave Generator Tool")
-        self.setMinimumSize(900, 750)
+        self.setMinimumSize(1050, 800)
         self.waveform_values = []
         self.time_values = []
+        self.segments = []
+        self._current_segment_index = -1
         self._setup_ui()
+
+    def _default_segment(self):
+        return {
+            "wave_type": "Sine", "avg_value": 20.0, "avg_unit": "W",
+            "max_value": 30.0, "max_unit": "W", "period": 240.0,
+            "period_unit": "sec", "cycles": 5, "step_size": 1.0, "step_unit": "sec",
+        }
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -1479,7 +1488,9 @@ class WaveToolDialog(QDialog):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        form = QFormLayout()
+        # --- Global Settings ---
+        global_group = QGroupBox("Global Settings")
+        global_form = QFormLayout()
 
         res_layout = QHBoxLayout()
         self.resistance = QDoubleSpinBox()
@@ -1490,11 +1501,53 @@ class WaveToolDialog(QDialog):
         self.res_unit = QComboBox()
         self.res_unit.addItems(["\u03a9", "k\u03a9"])
         res_layout.addWidget(self.res_unit)
-        form.addRow("Resistance (R):", res_layout)
+        global_form.addRow("Resistance (R):", res_layout)
 
         self.design_mode = QComboBox()
         self.design_mode.addItems(["Power (W)", "Voltage (V)", "Current (A)"])
-        form.addRow("Design By:", self.design_mode)
+        global_form.addRow("Design By:", self.design_mode)
+
+        self.export_mode = QComboBox()
+        self.export_mode.addItems(["Voltage (V)", "Current (A)"])
+        global_form.addRow("Export As:", self.export_mode)
+
+        global_group.setLayout(global_form)
+        layout.addWidget(global_group)
+
+        # --- Segments Section ---
+        segments_layout = QHBoxLayout()
+
+        seg_list_layout = QVBoxLayout()
+        seg_list_label = QLabel("<b>Segments</b>")
+        seg_list_layout.addWidget(seg_list_label)
+        self.segment_list = QListWidget()
+        self.segment_list.setMaximumWidth(200)
+        self.segment_list.currentRowChanged.connect(self._on_segment_selected)
+        seg_list_layout.addWidget(self.segment_list)
+
+        seg_btn_layout = QHBoxLayout()
+        for text, tooltip, handler in [
+            ("+", "Add segment", self._add_segment),
+            ("\u2212", "Remove segment", self._remove_segment),
+            ("\u25b2", "Move up", self._move_segment_up),
+            ("\u25bc", "Move down", self._move_segment_down),
+            ("Dup", "Duplicate segment", self._duplicate_segment),
+        ]:
+            btn = QPushButton(text)
+            btn.setToolTip(tooltip)
+            btn.setFixedWidth(36)
+            btn.clicked.connect(handler)
+            seg_btn_layout.addWidget(btn)
+        seg_list_layout.addLayout(seg_btn_layout)
+        segments_layout.addLayout(seg_list_layout)
+
+        self.seg_editor_group = QGroupBox("Segment 1")
+        seg_form = QFormLayout()
+
+        self.wave_type = QComboBox()
+        self.wave_type.addItems(["Sine", "Square", "Triangle", "Sawtooth", "Square-Sine", "Sine-Square"])
+        self.wave_type.currentTextChanged.connect(self._update_current_segment_label)
+        seg_form.addRow("Wave Type:", self.wave_type)
 
         avg_layout = QHBoxLayout()
         self.avg_value = QDoubleSpinBox()
@@ -1505,7 +1558,7 @@ class WaveToolDialog(QDialog):
         self.avg_unit = QComboBox()
         self.avg_unit.addItems(["W", "mW", "V", "mV", "A", "mA"])
         avg_layout.addWidget(self.avg_unit)
-        form.addRow("Average Value:", avg_layout)
+        seg_form.addRow("Average Value:", avg_layout)
 
         max_layout = QHBoxLayout()
         self.max_value = QDoubleSpinBox()
@@ -1516,11 +1569,7 @@ class WaveToolDialog(QDialog):
         self.max_unit = QComboBox()
         self.max_unit.addItems(["W", "mW", "V", "mV", "A", "mA"])
         max_layout.addWidget(self.max_unit)
-        form.addRow("Max Value:", max_layout)
-
-        self.wave_type = QComboBox()
-        self.wave_type.addItems(["Sine", "Square", "Triangle", "Sawtooth"])
-        form.addRow("Wave Type:", self.wave_type)
+        seg_form.addRow("Max Value:", max_layout)
 
         period_layout = QHBoxLayout()
         self.period = QDoubleSpinBox()
@@ -1531,12 +1580,12 @@ class WaveToolDialog(QDialog):
         self.period_unit = QComboBox()
         self.period_unit.addItems(["sec", "min", "hour", "ms"])
         period_layout.addWidget(self.period_unit)
-        form.addRow("Period:", period_layout)
+        seg_form.addRow("Period:", period_layout)
 
         self.cycles = QSpinBox()
         self.cycles.setRange(1, 1000)
         self.cycles.setValue(5)
-        form.addRow("Total Cycles:", self.cycles)
+        seg_form.addRow("Total Cycles:", self.cycles)
 
         step_layout = QHBoxLayout()
         self.step_size = QDoubleSpinBox()
@@ -1547,13 +1596,12 @@ class WaveToolDialog(QDialog):
         self.step_unit = QComboBox()
         self.step_unit.addItems(["sec", "ms", "\u03bcs"])
         step_layout.addWidget(self.step_unit)
-        form.addRow("Step Size (dt):", step_layout)
+        seg_form.addRow("Step Size (dt):", step_layout)
 
-        self.export_mode = QComboBox()
-        self.export_mode.addItems(["Voltage (V)", "Current (A)"])
-        form.addRow("Export As:", self.export_mode)
+        self.seg_editor_group.setLayout(seg_form)
+        segments_layout.addWidget(self.seg_editor_group)
 
-        layout.addLayout(form)
+        layout.addLayout(segments_layout)
 
         preview_btn = QPushButton("Preview Waveform")
         preview_btn.setStyleSheet("background-color: #374151; color: #e5e7eb; font-family: 'Inter'; font-size: 15px; padding: 12px; font-weight: bold;")
@@ -1571,7 +1619,6 @@ class WaveToolDialog(QDialog):
         self.preview_graph.setTitle("Waveform Preview", color='#e5e7eb', size='14pt')
         self.preview_graph.showGrid(x=True, y=True, alpha=0.2)
         self.preview_graph.setMinimumHeight(200)
-        self.waveform_plot = self.preview_graph.plot([], [], pen=pg.mkPen('#16a34a', width=2))
         layout.addWidget(self.preview_graph)
 
         btn_layout = QHBoxLayout()
@@ -1590,6 +1637,108 @@ class WaveToolDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
+        self._add_segment()
+
+    # --- Segment management ---
+
+    def _save_current_segment(self):
+        if self._current_segment_index < 0 or self._current_segment_index >= len(self.segments):
+            return
+        seg = self.segments[self._current_segment_index]
+        seg["wave_type"] = self.wave_type.currentText()
+        seg["avg_value"] = self.avg_value.value()
+        seg["avg_unit"] = self.avg_unit.currentText()
+        seg["max_value"] = self.max_value.value()
+        seg["max_unit"] = self.max_unit.currentText()
+        seg["period"] = self.period.value()
+        seg["period_unit"] = self.period_unit.currentText()
+        seg["cycles"] = self.cycles.value()
+        seg["step_size"] = self.step_size.value()
+        seg["step_unit"] = self.step_unit.currentText()
+
+    def _load_segment(self, index):
+        seg = self.segments[index]
+        self.wave_type.setCurrentText(seg["wave_type"])
+        self.avg_value.setValue(seg["avg_value"])
+        self.avg_unit.setCurrentText(seg["avg_unit"])
+        self.max_value.setValue(seg["max_value"])
+        self.max_unit.setCurrentText(seg["max_unit"])
+        self.period.setValue(seg["period"])
+        self.period_unit.setCurrentText(seg["period_unit"])
+        self.cycles.setValue(seg["cycles"])
+        self.step_size.setValue(seg["step_size"])
+        self.step_unit.setCurrentText(seg["step_unit"])
+        self.seg_editor_group.setTitle(f"Segment {index + 1}")
+
+    def _on_segment_selected(self, row):
+        if row < 0:
+            return
+        if self._current_segment_index >= 0:
+            self._save_current_segment()
+        self._current_segment_index = row
+        self._load_segment(row)
+
+    def _update_segment_list(self):
+        self.segment_list.blockSignals(True)
+        self.segment_list.clear()
+        for i, seg in enumerate(self.segments):
+            self.segment_list.addItem(f"Seg {i+1}: {seg['wave_type']}")
+        self.segment_list.blockSignals(False)
+
+    def _update_current_segment_label(self, text):
+        if self._current_segment_index >= 0:
+            item = self.segment_list.item(self._current_segment_index)
+            if item:
+                item.setText(f"Seg {self._current_segment_index + 1}: {text}")
+
+    def _add_segment(self):
+        if self._current_segment_index >= 0:
+            self._save_current_segment()
+        self.segments.append(self._default_segment())
+        self._update_segment_list()
+        self.segment_list.setCurrentRow(len(self.segments) - 1)
+
+    def _remove_segment(self):
+        if len(self.segments) <= 1:
+            QMessageBox.warning(self, "Warning", "Must have at least one segment.")
+            return
+        idx = self._current_segment_index
+        self._current_segment_index = -1
+        self.segments.pop(idx)
+        self._update_segment_list()
+        new_idx = min(idx, len(self.segments) - 1)
+        self.segment_list.setCurrentRow(new_idx)
+
+    def _move_segment_up(self):
+        idx = self._current_segment_index
+        if idx <= 0:
+            return
+        self._save_current_segment()
+        self.segments[idx], self.segments[idx-1] = self.segments[idx-1], self.segments[idx]
+        self._update_segment_list()
+        self._current_segment_index = -1
+        self.segment_list.setCurrentRow(idx - 1)
+
+    def _move_segment_down(self):
+        idx = self._current_segment_index
+        if idx >= len(self.segments) - 1:
+            return
+        self._save_current_segment()
+        self.segments[idx], self.segments[idx+1] = self.segments[idx+1], self.segments[idx]
+        self._update_segment_list()
+        self._current_segment_index = -1
+        self.segment_list.setCurrentRow(idx + 1)
+
+    def _duplicate_segment(self):
+        import copy
+        self._save_current_segment()
+        new_seg = copy.deepcopy(self.segments[self._current_segment_index])
+        self.segments.insert(self._current_segment_index + 1, new_seg)
+        self._update_segment_list()
+        self.segment_list.setCurrentRow(self._current_segment_index + 1)
+
+    # --- Waveform calculation ---
+
     def _get_unit_multiplier(self, unit: str) -> float:
         units = {
             "sec": 1.0, "min": 60.0, "hour": 3600.0, "ms": 1e-3, "\u03bcs": 1e-6,
@@ -1600,70 +1749,114 @@ class WaveToolDialog(QDialog):
         }
         return units.get(unit, 1.0)
 
-    def _calculate_waveform(self):
+    def _calculate_segment_waveform(self, seg, R, mode, export_target):
+        period_sec = seg["period"] * self._get_unit_multiplier(seg["period_unit"])
+        dt = seg["step_size"] * self._get_unit_multiplier(seg["step_unit"])
+        cycles = seg["cycles"]
+
+        avg = seg["avg_value"] * self._get_unit_multiplier(seg["avg_unit"])
+        max_val = seg["max_value"] * self._get_unit_multiplier(seg["max_unit"])
+        amplitude = max_val - avg
+
+        t = np.arange(0, cycles * period_sec, dt)
+        f = 1.0 / period_sec
+
+        wave_type = seg["wave_type"]
+        if wave_type == "Sine":
+            wave = avg + amplitude * np.sin(2 * np.pi * f * t)
+        elif wave_type == "Square":
+            wave = avg + amplitude * np.sign(np.sin(2 * np.pi * f * t))
+        elif wave_type == "Triangle":
+            wave = avg + amplitude * (2 * np.abs(2 * (t * f - np.floor(t * f + 0.5))) - 1)
+        elif wave_type == "Sawtooth":
+            wave = avg + amplitude * (2 * (t * f - np.floor(t * f + 0.5)))
+        elif wave_type == "Square-Sine":
+            phase = (t * f) % 1.0
+            wave = np.where(phase < 0.5,
+                avg + amplitude,
+                avg + amplitude * np.cos(np.pi * (phase - 0.5) / 0.5))
+        elif wave_type == "Sine-Square":
+            phase = (t * f) % 1.0
+            wave = np.where(phase < 0.5,
+                avg - amplitude * np.cos(np.pi * phase / 0.5),
+                avg + amplitude)
+
+        if mode == "Power":
+            if export_target == "Voltage":
+                final_values = np.sqrt(np.maximum(wave * R, 0))
+            else:
+                final_values = np.sqrt(np.maximum(wave / R, 0))
+        elif mode == "Voltage":
+            if export_target == "Voltage":
+                final_values = wave
+            else:
+                final_values = wave / R
+        elif mode == "Current":
+            if export_target == "Voltage":
+                final_values = wave * R
+            else:
+                final_values = wave
+
+        return t, final_values
+
+    def _calculate_all_segments(self):
         try:
+            self._save_current_segment()
+
             R = self.resistance.value() * self._get_unit_multiplier(self.res_unit.currentText())
-            period_sec = self.period.value() * self._get_unit_multiplier(self.period_unit.currentText())
-            dt = self.step_size.value() * self._get_unit_multiplier(self.step_unit.currentText())
-            cycles = self.cycles.value()
             mode = self.design_mode.currentText().split(" ")[0]
-            avg_mult = self._get_unit_multiplier(self.avg_unit.currentText())
-            max_mult = self._get_unit_multiplier(self.max_unit.currentText())
-            avg = self.avg_value.value() * avg_mult
-            max_val = self.max_value.value() * max_mult
-            amplitude = max_val - avg
-            t = np.arange(0, cycles * period_sec, dt)
-            f = 1.0 / period_sec
-
-            wave_type = self.wave_type.currentText()
-            if wave_type == "Sine":
-                wave = avg + amplitude * np.sin(2 * np.pi * f * t)
-            elif wave_type == "Square":
-                wave = avg + amplitude * np.sign(np.sin(2 * np.pi * f * t))
-            elif wave_type == "Triangle":
-                wave = avg + amplitude * (2 * np.abs(2 * (t * f - np.floor(t * f + 0.5))) - 1)
-            elif wave_type == "Sawtooth":
-                wave = avg + amplitude * (2 * (t * f - np.floor(t * f + 0.5)))
-
             export_target = self.export_mode.currentText().split(" ")[0]
 
-            if mode == "Power":
-                if export_target == "Voltage":
-                    final_values = np.sqrt(np.maximum(wave * R, 0))
-                else:
-                    final_values = np.sqrt(np.maximum(wave / R, 0))
-            elif mode == "Voltage":
-                if export_target == "Voltage":
-                    final_values = wave
-                else:
-                    final_values = wave / R
-            elif mode == "Current":
-                if export_target == "Voltage":
-                    final_values = wave * R
-                else:
-                    final_values = wave
+            all_t = []
+            all_values = []
+            time_offset = 0.0
 
-            return t, wave, final_values, f
+            for seg in self.segments:
+                t, values = self._calculate_segment_waveform(seg, R, mode, export_target)
+                all_t.append(t + time_offset)
+                all_values.append(values)
+                if len(t) > 0:
+                    dt = t[1] - t[0] if len(t) > 1 else seg["step_size"] * self._get_unit_multiplier(seg["step_unit"])
+                    time_offset = all_t[-1][-1] + dt
+
+            combined_t = np.concatenate(all_t)
+            combined_values = np.concatenate(all_values)
+
+            return combined_t, combined_values
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
             return None
 
     def _preview(self):
-        result = self._calculate_waveform()
+        result = self._calculate_all_segments()
         if result:
-            t, wave, final_values, f = result
-            self.waveform_values = list(final_values)
-            self.time_values = list(t)
+            combined_t, combined_values = result
+            self.waveform_values = list(combined_values)
+            self.time_values = list(combined_t)
             export_unit = "V" if "Voltage" in self.export_mode.currentText() else "A"
+
+            n_segs = len(self.segments)
             self.info_label.setText(
-                f"Generated {len(final_values)} points | "
-                f"Frequency: {f:.6f} Hz | "
-                f"Duration: {t[-1]:.2f}s | "
-                f"Output: {min(final_values):.4f} to {max(final_values):.4f} {export_unit}"
+                f"{n_segs} segment{'s' if n_segs > 1 else ''} | "
+                f"{len(combined_values)} points | "
+                f"Duration: {combined_t[-1]:.2f}s | "
+                f"Output: {min(combined_values):.4f} to {max(combined_values):.4f} {export_unit}"
             )
             self.info_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
-            self.waveform_plot.setData(self.time_values, self.waveform_values)
+
+            self.preview_graph.clear()
+            self.preview_graph.plot(self.time_values, self.waveform_values, pen=pg.mkPen('#16a34a', width=2))
             self.preview_graph.setLabel('left', f'Output ({export_unit})')
+
+            if n_segs > 1:
+                time_offset = 0.0
+                for i, seg in enumerate(self.segments[:-1]):
+                    period_sec = seg["period"] * self._get_unit_multiplier(seg["period_unit"])
+                    seg_duration = seg["cycles"] * period_sec
+                    time_offset += seg_duration
+                    boundary_line = pg.InfiniteLine(pos=time_offset, angle=90,
+                        pen=pg.mkPen('#ff6b6b', width=1, style=Qt.DashLine))
+                    self.preview_graph.addItem(boundary_line)
 
     def _generate_and_accept(self):
         self._preview()
