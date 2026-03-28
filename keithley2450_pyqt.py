@@ -885,7 +885,7 @@ class TimingSettingsWidget(QGroupBox):
         
         # Points
         self.points = QSpinBox()
-        self.points.setRange(1, 100000)
+        self.points.setRange(1, 10000000)
         self.points.setValue(51)
         layout.addRow("Points:", self.points)
         
