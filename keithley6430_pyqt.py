@@ -53,8 +53,7 @@ __version__ = "1.1.4"
 __app_name__ = "K6430 Control Suite"
 __app_subtitle__ = "Sub-Femtoamp Remote SourceMeter"
 __author__ = "Omer Vered"
-__organization__ = "Ben-Gurion University of the Negev (BGU)"
-__copyright__ = "Copyright 2026 Omer Vered, BGU"
+__copyright__ = "Copyright 2026 Omer Vered"
 
 
 @dataclass

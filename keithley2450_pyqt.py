@@ -50,8 +50,7 @@ pg.setConfigOptions(antialias=True, background='#1a1a2e', foreground='#e5e7eb')
 __version__ = "1.1.4"
 __app_name__ = "K2450 Control Suite"
 __author__ = "Omer Vered"
-__organization__ = "Ben-Gurion University of the Negev (BGU)"
-__copyright__ = "Copyright 2026 Omer Vered, BGU"
+__copyright__ = "Copyright 2026 Omer Vered"
 
 
 @dataclass

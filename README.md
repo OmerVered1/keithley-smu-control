@@ -86,5 +86,16 @@ K2450Suite/                 # K2450 packaging resources
 
 **Omer Vered**
 
+## Disclaimer
+
+This project is an independent, open-source tool developed by a third party. It is **not affiliated with, endorsed by, or supported by Tektronix, Inc. or Keithley Instruments**. "Keithley" and "SourceMeter" are registered trademarks of Tektronix, Inc. These names are used solely for the purpose of identifying the instruments this software is designed to communicate with.
+
+Communication with instruments is performed using standard SCPI commands and TSP (Test Script Processor) as documented in the publicly available Keithley reference manuals. No proprietary Keithley/Tektronix software or source code was used or reproduced.
+
+**Use at your own risk.** This software controls physical instruments capable of sourcing potentially hazardous voltages and currents. The author accepts no responsibility for damage to instruments, equipment, or any other harm resulting from the use or misuse of this software. Always verify safety limits and operating parameters before use. It is the user's sole responsibility to ensure safe and correct operation in accordance with the instrument's official documentation.
+
 ## License
-i claim no rights or intellectual property and accountabilty for faulty use or damages is on the users alone
+
+MIT License — see [LICENSE](LICENSE) for full text.
+
+Copyright (c) 2026 Omer Vered

@@ -22,7 +22,6 @@ from PyQt5.QtGui import QFont, QPalette, QColor
 __version__ = "1.1.4"
 __app_name__ = "Keithley SMU Control Suite"
 __author__ = "Omer Vered"
-__organization__ = "Ben-Gurion University of the Negev (BGU)"
 
 
 class InstrumentCard(QFrame):

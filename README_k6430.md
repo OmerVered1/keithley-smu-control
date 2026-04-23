@@ -146,9 +146,10 @@ README_k6430.md          — This file
 
 ## Author
 
-**Omer Vered** — Hayun Group, Ben-Gurion University of the Negev (BGU)
+**Omer Vered**
 
 ## License
 
-Copyright © 2026 Omer Vered, BGU. All rights reserved.
-See LICENSE.txt for details.
+MIT License — see [LICENSE](LICENSE) for full text.
+
+Copyright (c) 2026 Omer Vered

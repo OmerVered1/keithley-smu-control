@@ -4,9 +4,8 @@ K2450 Control Suite - Version Information
 
 __version__ = "1.1.4"
 __author__ = "Omer Vered"
-__organization__ = "Ben-Gurion University of the Negev (BGU)"
-__copyright__ = "Copyright 2026 Omer Vered, BGU"
-__license__ = "Proprietary"
+__copyright__ = "Copyright 2026 Omer Vered"
+__license__ = "MIT"
 __app_name__ = "K2450 Control Suite"
 __description__ = "Professional Keithley 2450 SMU Control and I-V Characterization Software"
 
