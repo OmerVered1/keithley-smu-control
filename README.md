@@ -87,5 +87,4 @@ K2450Suite/                 # K2450 packaging resources
 **Omer Vered**
 
 ## License
-
-Copyright 2026 Omer Vered. All rights reserved.
+i came no rights or intellectual property and accountabilty for faulty use or damages is on the users alone
