@@ -87,4 +87,4 @@ K2450Suite/                 # K2450 packaging resources
 **Omer Vered**
 
 ## License
-i came no rights or intellectual property and accountabilty for faulty use or damages is on the users alone
+i claim no rights or intellectual property and accountabilty for faulty use or damages is on the users alone
