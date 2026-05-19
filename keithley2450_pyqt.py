@@ -21,7 +21,7 @@ import json
 import numpy as np
 from typing import Optional, List, Dict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -48,7 +48,7 @@ from keithley2450_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 __app_name__ = "K2450 Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -1349,8 +1349,8 @@ class SweepListWidget(QGroupBox):
         
         layout.addLayout(btn_layout2)
         
-        # Wave Generator button (fills the column so it never overflows)
-        wave_btn = QPushButton("\U0001f30a Wave Generator")
+        # Custom Signal Design button (fills the column so it never overflows)
+        wave_btn = QPushButton("Custom Signal Design")
         wave_btn.setMinimumWidth(0)
         wave_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         wave_btn.setStyleSheet("""
@@ -1889,11 +1889,11 @@ understand it, and agree to be bound by its terms and conditions."""
 
 
 class WaveToolDialog(QDialog):
-    """Wave Generator Tool - Creates multi-segment waveforms for I-V sweeps"""
+    """Custom Signal Design Tool - Creates multi-segment waveforms for I-V sweeps"""
 
     def __init__(self, parent=None, get_resistance_fn=None):
         super().__init__(parent)
-        self.setWindowTitle("Wave Generator Tool")
+        self.setWindowTitle("Custom Signal Design")
         self.setMinimumSize(520, 600)
         self.resize(1050, 800)
         self.waveform_values = []
@@ -1917,7 +1917,7 @@ class WaveToolDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Title
-        title = QLabel("<h2>Heat Wave Generator</h2>")
+        title = QLabel("<h2>Custom Signal Design</h2>")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
@@ -2532,7 +2532,7 @@ class Keithley2450App(QMainWindow):
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
         
-        wave_tool_action = QAction("Wave Generator...", self)
+        wave_tool_action = QAction("Custom Signal Design...", self)
         wave_tool_action.triggered.connect(self._show_wave_tool)
         tools_menu.addAction(wave_tool_action)
         
@@ -3219,7 +3219,7 @@ class Keithley2450App(QMainWindow):
         return panel.last_resistance if panel is not None else None
 
     def _show_wave_tool(self):
-        """Show the Wave Generator tool dialog"""
+        """Show the Custom Signal Design tool dialog"""
         if getattr(self, "_wave_dialog", None) is None:
             self._wave_dialog = WaveToolDialog(self, get_resistance_fn=self._get_live_resistance)
             if self._current_wave_config:
@@ -3230,7 +3230,7 @@ class Keithley2450App(QMainWindow):
             if wave_values:
                 self.sweep_list.sweep_values = wave_values
                 self.sweep_list._update_table()
-                self.status.showMessage(f"Imported {len(wave_values)} points from Wave Generator")
+                self.status.showMessage(f"Imported {len(wave_values)} points from Custom Signal Design")
         # Remember the dialog state so we can persist it with the experiment
         self._current_wave_config = dialog.dump_state()
         self._mark_dirty()
@@ -3404,9 +3404,8 @@ class Keithley2450App(QMainWindow):
             self._live_csv_path = os.path.join(save_dir, filename)
             self._live_csv_file = open(self._live_csv_path, 'w', newline='')
             self._live_csv_writer = csv.writer(self._live_csv_file)
-            self._live_csv_writer.writerow([f'# Run {self.run_number}'])
-            self._live_csv_writer.writerow([f'# Started: {self.run_start_datetime.strftime("%Y-%m-%d %H:%M:%S")}'])
-            self._live_csv_writer.writerow([])
+            for row in self._build_csv_metadata_rows(sweep_values):
+                self._live_csv_writer.writerow(row)
             self._live_csv_writer.writerow(['Index', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(W)'])
             self._live_csv_file.flush()
             self.status.showMessage(f"Saving to: {filename}")
@@ -3555,14 +3554,21 @@ class Keithley2450App(QMainWindow):
         
         # Calculate remaining time estimate
         elapsed = time.time() - self.sweep_start_time
+        elapsed_str = self._fmt_duration(elapsed)
         if point.index > 0 and self.total_sweep_points > point.index:
             time_per_point = elapsed / point.index
             remaining_points = self.total_sweep_points - point.index
             remaining_sec = remaining_points * time_per_point
-            mins, secs = divmod(int(remaining_sec), 60)
-            self.progress_label.setText(f"{point.index} / {self.total_sweep_points} | Est: {mins:02d}:{secs:02d}")
+            eta_str = self._fmt_duration(remaining_sec)
+            finish_str = (datetime.now() + timedelta(seconds=remaining_sec)).strftime("%H:%M:%S")
+            self.progress_label.setText(
+                f"{point.index} / {self.total_sweep_points}  ·  {elapsed_str} elapsed  ·  "
+                f"{eta_str} left  ·  finish {finish_str}"
+            )
         else:
-            self.progress_label.setText(f"{point.index} / {self.total_sweep_points}")
+            self.progress_label.setText(
+                f"{point.index} / {self.total_sweep_points}  ·  {elapsed_str} elapsed"
+            )
         
         v_str = f"{point.voltage:.6f}V" if point.voltage else ""
         i_str = f"{point.current:.4e}A" if point.current else ""
@@ -3589,8 +3595,9 @@ class Keithley2450App(QMainWindow):
             self.stop_btn.setEnabled(False)
             self.graph.update_live()  # Final update
             total_time = time.time() - self.sweep_start_time
-            mins, secs = divmod(int(total_time), 60)
-            self.progress_label.setText(f"Done: {self.total_sweep_points} pts in {mins:02d}:{secs:02d}")
+            self.progress_label.setText(
+                f"Done: {self.total_sweep_points} pts in {self._fmt_duration(total_time)}"
+            )
             self.status.showMessage("Sweep completed")
             
             # Close live CSV file
@@ -3613,6 +3620,50 @@ class Keithley2450App(QMainWindow):
             self.smu.output_off()
         self.status.showMessage("Stopping...")
     
+    @staticmethod
+    def _fmt_duration(seconds: float) -> str:
+        s = max(0, int(seconds))
+        h, rem = divmod(s, 3600)
+        m, s = divmod(rem, 60)
+        if h > 0:
+            return f"{h}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
+
+    def _build_csv_metadata_rows(self, sweep_values=None) -> List[List[str]]:
+        """Build the metadata header rows written at the top of every saved sweep CSV."""
+        ss = self.source_settings
+        inst = self.inst_settings
+        ms = self.measure_settings
+        ts = self.timing_settings
+        rows: List[List[str]] = []
+        rows.append([f"# Run {self.run_number}"])
+        if self.run_start_datetime:
+            rows.append([f"# Started: {self.run_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}"])
+        rows.append([f"# Experiment: {self._current_experiment_name or '(Untitled)'}"])
+        if self._current_experiment_notes:
+            note = self._current_experiment_notes.strip().replace('\n', ' | ')
+            rows.append([f"# Notes: {note}"])
+        try:
+            ident = self.smu.get_identification() if self.smu else ""
+        except Exception:
+            ident = ""
+        if ident:
+            rows.append([f"# Instrument: {ident.strip()}"])
+        rows.append([f"# Mode: {'SIMULATION' if (self.smu and getattr(self.smu, 'simulate', False)) else 'HARDWARE'}"])
+        rows.append([f"# Source: function={ss.function} mode={ss.mode.currentText()} range={ss.range.currentText()} compliance={ss.compliance.value()}"])
+        terminal = getattr(inst, 'terminal', '?')
+        hicap = inst.high_cap.isChecked() if hasattr(inst, 'high_cap') else False
+        rows.append([f"# Instrument: sense={inst.sense} terminal={terminal} high_cap={hicap} output_off={inst.output_off_mode.currentText() if hasattr(inst,'output_off_mode') else '-'}"])
+        measured = [name for name, cb in [("V", ms.measure_v), ("I", ms.measure_i), ("R", ms.measure_r), ("P", ms.measure_p)] if cb.isChecked()]
+        rows.append([f"# Measure: {','.join(measured) or '-'}  range={ms.measure_range.currentText() if hasattr(ms,'measure_range') else '-'}  auto_zero={ms.auto_zero.currentText() if hasattr(ms,'auto_zero') else '-'}"])
+        rows.append([f"# Timing: points={ts.points.value()} repeat={ts.repeat.value()} delay={ts.delay.value()}s nplc={ts.nplc.value()} step_size={ts.step_size.value()}s auto_delay={ts.auto_delay_check.isChecked()}"])
+        if sweep_values is not None and len(sweep_values) > 0:
+            vmin = min(sweep_values)
+            vmax = max(sweep_values)
+            rows.append([f"# Sweep: n={len(sweep_values)} range=[{vmin:.6g}, {vmax:.6g}] total_points={self.total_sweep_points}"])
+        rows.append([])
+        return rows
+
     def _safe_experiment_token(self) -> str:
         name = self._current_experiment_name or "Untitled"
         return "".join(c if c.isalnum() or c in "-_." else "_" for c in name)
@@ -3650,12 +3701,9 @@ class Keithley2450App(QMainWindow):
         """Write measurement data to CSV file"""
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
-            # Header with run info
-            writer.writerow([f'# Run {self.run_number}'])
-            if self.run_start_datetime:
-                writer.writerow([f'# Started: {self.run_start_datetime.strftime("%Y-%m-%d %H:%M:%S")}'])
-            writer.writerow([f'# Points: {len(self.measurement_data)}'])
-            writer.writerow([])  # Empty row
+            sweep_values = [p.source_value for p in self.measurement_data] if self.measurement_data else None
+            for row in self._build_csv_metadata_rows(sweep_values):
+                writer.writerow(row)
             writer.writerow(['Index', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(W)'])
             for p in self.measurement_data:
                 writer.writerow([

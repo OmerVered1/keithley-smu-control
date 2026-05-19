@@ -19,7 +19,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QPalette, QColor
 
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 __app_name__ = "Keithley SMU Control Suite"
 __author__ = "Omer Vered"
 
