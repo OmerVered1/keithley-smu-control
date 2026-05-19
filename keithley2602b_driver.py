@@ -472,8 +472,7 @@ class Keithley2602B:
         ch_state = self._channels[channel]
         v = ch_state.source_value
         base_r = self.simulation_resistance
-        # Add slight nonlinearity
-        effective_r = base_r * (1 + 0.01 * abs(v))
+        effective_r = base_r
 
         if meas_type == "v":
             if ch_state.source_function == SourceFunction.VOLTAGE:

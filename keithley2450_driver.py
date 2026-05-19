@@ -348,8 +348,7 @@ class Keithley2450:
                 # Sourcing voltage
                 v = self._source_value
                 base_resistance = self.simulation_resistance
-                # Add slight nonlinearity (resistance increases ~1% per volt)
-                effective_r = base_resistance * (1 + 0.01 * abs(v))
+                effective_r = base_resistance
                 
                 if sense_func == 'CURR':
                     # Measuring current (I = V/R)
@@ -368,7 +367,7 @@ class Keithley2450:
                 # Sourcing current
                 i = self._source_value
                 base_resistance = self.simulation_resistance
-                effective_r = base_resistance * (1 + 0.01 * abs(i) * base_resistance)
+                effective_r = base_resistance
                 
                 if sense_func == 'VOLT':
                     # Measuring voltage (V = I*R)

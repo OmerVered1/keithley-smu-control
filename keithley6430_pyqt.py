@@ -21,7 +21,7 @@ import threading
 import csv
 import json
 import numpy as np
-from typing import Optional, List
+from typing import Optional, List, Dict
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -32,7 +32,8 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QSplitter,
     QFrame, QMessageBox, QFileDialog, QDialog, QListWidget,
     QProgressBar, QStatusBar, QTextEdit, QSizePolicy, QMenuBar,
-    QMenu, QAction, QFormLayout, QScrollArea
+    QMenu, QAction, QFormLayout, QScrollArea, QAbstractSpinBox,
+    QInputDialog
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, QSettings
 from PyQt5.QtGui import QFont, QColor, QPalette, QIcon
@@ -46,13 +47,14 @@ from keithley6430_driver import (
 )
 
 # Configure pyqtgraph
-pg.setConfigOptions(antialias=True, background='#1a1a2e', foreground='#e5e7eb')
+pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "1.1.4"
+__version__ = "2.0.1"
 __app_name__ = "K6430 Control Suite"
 __app_subtitle__ = "Sub-Femtoamp Remote SourceMeter"
 __author__ = "Omer Vered"
+__organization__ = "Omer Vered MSc Research"
 __copyright__ = "Copyright 2026 Omer Vered"
 
 
@@ -69,26 +71,90 @@ class MeasurementPoint:
     power: Optional[float] = None
 
 
+# === Experiments ===
+
+EXPERIMENTS_FILE = os.path.join(os.path.expanduser("~"), "Documents",
+                                "K6430_Experiments", "experiments.json")
+
+
+class ExperimentStore:
+    """JSON-backed store of named experiments (settings + sweep list + wave config + notes)."""
+
+    def __init__(self, path: str = EXPERIMENTS_FILE):
+        self.path = path
+        self._experiments: Dict[str, dict] = {}
+        self.load()
+
+    def load(self):
+        self._experiments = {}
+        if not os.path.exists(self.path):
+            return
+        try:
+            with open(self.path, "r") as f:
+                data = json.load(f)
+            for exp in data.get("experiments", []):
+                name = exp.get("name")
+                if name:
+                    self._experiments[name] = exp
+        except Exception as e:
+            print(f"ExperimentStore load error: {e}")
+
+    def _persist(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path, "w") as f:
+            json.dump({"experiments": list(self._experiments.values())}, f, indent=2)
+
+    def names(self) -> List[str]:
+        return sorted(self._experiments.keys(), key=str.lower)
+
+    def get(self, name: str) -> Optional[dict]:
+        return self._experiments.get(name)
+
+    def save(self, name: str, payload: dict):
+        now = datetime.now().isoformat(timespec="seconds")
+        existing = self._experiments.get(name, {})
+        record = dict(payload)
+        record["name"] = name
+        record["created_at"] = existing.get("created_at", now)
+        record["modified_at"] = now
+        self._experiments[name] = record
+        self._persist()
+
+    def delete(self, name: str):
+        if name in self._experiments:
+            del self._experiments[name]
+            self._persist()
+
+    def rename(self, old: str, new: str):
+        if old not in self._experiments or new == old:
+            return
+        record = self._experiments.pop(old)
+        record["name"] = new
+        record["modified_at"] = datetime.now().isoformat(timespec="seconds")
+        self._experiments[new] = record
+        self._persist()
+
+
 class LightPalette(QPalette):
-    """Dark theme color palette with neutral greyscale for 6430"""
+    """Light theme: black text on white surfaces with subtle grays for borders."""
     def __init__(self):
         super().__init__()
-        self.setColor(QPalette.Window, QColor(26, 26, 46))            # #1a1a2e
-        self.setColor(QPalette.WindowText, QColor(229, 231, 235))     # #e5e7eb
-        self.setColor(QPalette.Base, QColor(30, 30, 46))               # #1e1e2e
-        self.setColor(QPalette.AlternateBase, QColor(32, 32, 48))     # #202030
-        self.setColor(QPalette.ToolTipBase, QColor(37, 37, 54))        # #252536
-        self.setColor(QPalette.ToolTipText, QColor(255, 255, 255))
-        self.setColor(QPalette.Text, QColor(229, 231, 235))           # #e5e7eb
-        self.setColor(QPalette.Button, QColor(32, 32, 48))            # #202030
-        self.setColor(QPalette.ButtonText, QColor(229, 231, 235))     # #e5e7eb
-        self.setColor(QPalette.BrightText, QColor(239, 68, 68))       # #ef4444
-        self.setColor(QPalette.Link, QColor(229, 231, 235))           # #e5e7eb
-        self.setColor(QPalette.Highlight, QColor(229, 231, 235))      # #e5e7eb
+        self.setColor(QPalette.Window, QColor(255, 255, 255))          # #ffffff
+        self.setColor(QPalette.WindowText, QColor(26, 26, 46))         # #1a1a2e (near-black)
+        self.setColor(QPalette.Base, QColor(255, 255, 255))            # #ffffff
+        self.setColor(QPalette.AlternateBase, QColor(243, 244, 246))   # #f3f4f6
+        self.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))     # #ffffff
+        self.setColor(QPalette.ToolTipText, QColor(26, 26, 46))        # #1a1a2e
+        self.setColor(QPalette.Text, QColor(26, 26, 46))               # #1a1a2e
+        self.setColor(QPalette.Button, QColor(243, 244, 246))          # #f3f4f6
+        self.setColor(QPalette.ButtonText, QColor(26, 26, 46))         # #1a1a2e
+        self.setColor(QPalette.BrightText, QColor(220, 38, 38))        # #dc2626
+        self.setColor(QPalette.Link, QColor(37, 99, 235))              # #2563eb
+        self.setColor(QPalette.Highlight, QColor(59, 130, 246))        # #3b82f6
         self.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-        self.setColor(QPalette.Disabled, QPalette.WindowText, QColor(75, 86, 99))  # #4b5563
-        self.setColor(QPalette.Disabled, QPalette.Text, QColor(75, 86, 99))
-        self.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(75, 86, 99))
+        self.setColor(QPalette.Disabled, QPalette.WindowText, QColor(156, 163, 175))  # #9ca3af
+        self.setColor(QPalette.Disabled, QPalette.Text, QColor(156, 163, 175))
+        self.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(156, 163, 175))
 
 
 class ToggleButton(QPushButton):
@@ -109,8 +175,8 @@ class ToggleButton(QPushButton):
         if self._selected:
             self.setStyleSheet("""
                 QPushButton {
-                    background-color: #e5e7eb;
-                    color: #1a1a2e;
+                    background-color: #1a1a2e;
+                    color: #ffffff;
                     border: none;
                     padding: 6px 16px;
                     font-weight: bold;
@@ -121,15 +187,15 @@ class ToggleButton(QPushButton):
         else:
             self.setStyleSheet("""
                 QPushButton {
-                    background-color: #1a1a2e;
-                    color: #9ca3af;
-                    border: 1px solid #374151;
+                    background-color: #ffffff;
+                    color: #6b7280;
+                    border: 1px solid #d1d5db;
                     padding: 6px 16px;
                     font-weight: 500;
                     font-size: 14px;
                     border-radius: 5px;
                 }
-                QPushButton:hover { background-color: #252536; color: #e5e7eb; }
+                QPushButton:hover { background-color: #f3f4f6; color: #1a1a2e; }
             """)
 
 
@@ -212,6 +278,7 @@ class MultimeterPanel(QWidget):
         self.reading_count = 0
         self.record_start_time = None
         self.recorded_data = []
+        self.last_resistance: Optional[float] = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -342,12 +409,12 @@ class MultimeterPanel(QWidget):
         self.start_btn = QPushButton("START")
         self.start_btn.setStyleSheet("""
             QPushButton {
-                background-color: #e5e7eb; color: #1a1a2e;
+                background-color: #1a1a2e; color: #ffffff;
                 font-family: 'Inter'; font-size: 14px; font-weight: bold;
                 padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #ffffff; }
-            QPushButton:disabled { background-color: #252536; color: #4b5563; }
+            QPushButton:hover { background-color: #374151; }
+            QPushButton:disabled { background-color: #e5e7eb; color: #9ca3af; }
         """)
         self.start_btn.clicked.connect(self.start_live)
         btn_layout.addWidget(self.start_btn)
@@ -355,12 +422,12 @@ class MultimeterPanel(QWidget):
         self.stop_btn = QPushButton("STOP")
         self.stop_btn.setStyleSheet("""
             QPushButton {
-                background-color: #374151; color: #e5e7eb;
+                background-color: #dc2626; color: #ffffff;
                 font-family: 'Inter'; font-size: 14px; font-weight: bold;
                 padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #4b5563; }
-            QPushButton:disabled { background-color: #252536; color: #4b5563; }
+            QPushButton:hover { background-color: #b91c1c; }
+            QPushButton:disabled { background-color: #e5e7eb; color: #9ca3af; }
         """)
         self.stop_btn.clicked.connect(self.stop_live)
         self.stop_btn.setEnabled(False)
@@ -374,12 +441,12 @@ class MultimeterPanel(QWidget):
         self.record_btn = QPushButton("RECORD")
         self.record_btn.setStyleSheet("""
             QPushButton {
-                background-color: #374151; color: #e5e7eb;
+                background-color: #f3f4f6; color: #1a1a2e;
                 font-family: 'Inter'; font-size: 14px; font-weight: bold;
-                padding: 8px 20px; border-radius: 6px; border: none;
+                padding: 8px 20px; border-radius: 6px; border: 1px solid #d1d5db;
             }
-            QPushButton:hover { background-color: #4b5563; }
-            QPushButton:disabled { background-color: #252536; color: #4b5563; }
+            QPushButton:hover { background-color: #e5e7eb; }
+            QPushButton:disabled { background-color: #f9fafb; color: #9ca3af; }
         """)
         self.record_btn.clicked.connect(self._start_recording)
         self.record_btn.setEnabled(False)
@@ -388,12 +455,12 @@ class MultimeterPanel(QWidget):
         self.pause_record_btn = QPushButton("PAUSE")
         self.pause_record_btn.setStyleSheet("""
             QPushButton {
-                background-color: #374151; color: #e5e7eb;
+                background-color: #f3f4f6; color: #1a1a2e;
                 font-family: 'Inter'; font-size: 14px; font-weight: bold;
-                padding: 8px 20px; border-radius: 6px; border: none;
+                padding: 8px 20px; border-radius: 6px; border: 1px solid #d1d5db;
             }
-            QPushButton:hover { background-color: #4b5563; }
-            QPushButton:disabled { background-color: #252536; color: #4b5563; }
+            QPushButton:hover { background-color: #e5e7eb; }
+            QPushButton:disabled { background-color: #f9fafb; color: #9ca3af; }
         """)
         self.pause_record_btn.clicked.connect(self._pause_recording)
         self.pause_record_btn.setEnabled(False)
@@ -402,19 +469,19 @@ class MultimeterPanel(QWidget):
         self.save_record_btn = QPushButton("SAVE CSV")
         self.save_record_btn.setStyleSheet("""
             QPushButton {
-                background-color: #374151; color: #e5e7eb;
+                background-color: #f3f4f6; color: #1a1a2e;
                 font-family: 'Inter'; font-size: 14px; font-weight: bold;
-                padding: 8px 20px; border-radius: 6px; border: none;
+                padding: 8px 20px; border-radius: 6px; border: 1px solid #d1d5db;
             }
-            QPushButton:hover { background-color: #4b5563; }
-            QPushButton:disabled { background-color: #252536; color: #4b5563; }
+            QPushButton:hover { background-color: #e5e7eb; }
+            QPushButton:disabled { background-color: #f9fafb; color: #9ca3af; }
         """)
         self.save_record_btn.clicked.connect(self._save_recording)
         self.save_record_btn.setEnabled(False)
         record_layout.addWidget(self.save_record_btn)
 
         self.record_status = QLabel("Recording: Stopped | Points: 0")
-        self.record_status.setStyleSheet("color: #9ca3af;")
+        self.record_status.setStyleSheet("color: #6b7280;")
         record_layout.addWidget(self.record_status)
         record_layout.addStretch()
 
@@ -422,10 +489,10 @@ class MultimeterPanel(QWidget):
 
         # Recording Graph
         self.record_graph = pg.PlotWidget()
-        self.record_graph.setBackground('#1a1a2e')
-        self.record_graph.setLabel('left', 'Value', color='#e5e7eb')
-        self.record_graph.setLabel('bottom', 'Time (s)', color='#e5e7eb')
-        self.record_graph.setTitle("Recording Graph", color='#e5e7eb', size='14pt')
+        self.record_graph.setBackground('#ffffff')
+        self.record_graph.setLabel('left', 'Value', color='#1a1a2e')
+        self.record_graph.setLabel('bottom', 'Time (s)', color='#1a1a2e')
+        self.record_graph.setTitle("Recording Graph", color='#1a1a2e', size='14pt')
         self.record_graph.addLegend()
         self.record_graph.showGrid(x=True, y=True, alpha=0.2)
         self.record_graph.setMinimumHeight(200)
@@ -552,6 +619,7 @@ class MultimeterPanel(QWidget):
                 power = abs(voltage * current)
                 self.resistance_display.set_value(resistance)
                 self.power_display.set_value(power)
+                self.last_resistance = resistance
 
             self.reading_count += 1
             self.readings_label.setText(f"Readings: {self.reading_count}")
@@ -845,13 +913,28 @@ class TimingSettingsWidget(QGroupBox):
         self.repeat.setValue(1)
         layout.addRow("Repeat:", self.repeat)
 
+        delay_row = QHBoxLayout()
         self.delay = QDoubleSpinBox()
         self.delay.setRange(0, 60)
         self.delay.setDecimals(4)
         self.delay.setValue(0.1)
         self.delay.setSuffix(" s")
         self.delay.setToolTip("Longer delays recommended for sub-femtoamp measurements")
-        layout.addRow("Delay:", self.delay)
+        delay_row.addWidget(self.delay)
+        self.auto_delay_check = QCheckBox("Auto-adjust to step size")
+        self.auto_delay_check.setToolTip("When ticked, delay is computed so each point takes Step Size seconds")
+        self.auto_delay_check.toggled.connect(self._on_auto_delay_toggled)
+        delay_row.addWidget(self.auto_delay_check)
+        layout.addRow("Delay:", delay_row)
+
+        self.step_size = QDoubleSpinBox()
+        self.step_size.setRange(0.001, 120)
+        self.step_size.setDecimals(4)
+        self.step_size.setValue(1.0)
+        self.step_size.setSuffix(" s")
+        self.step_size.setToolTip("Desired time between consecutive sweep points (window + delay)")
+        self.step_size.valueChanged.connect(self._recompute_auto_delay)
+        layout.addRow("Step Size (dt):", self.step_size)
 
         self.nplc = QDoubleSpinBox()
         self.nplc.setRange(0.01, 10)
@@ -868,6 +951,265 @@ class TimingSettingsWidget(QGroupBox):
         nplc = self.nplc.value()
         window_ms = nplc * 20  # 50Hz power line
         self.window_label.setText(f"{window_ms:.1f} ms")
+        self._recompute_auto_delay()
+
+    def _on_auto_delay_toggled(self, checked: bool):
+        self.delay.setReadOnly(checked)
+        self.delay.setButtonSymbols(QAbstractSpinBox.NoButtons if checked else QAbstractSpinBox.UpDownArrows)
+        if checked:
+            self._recompute_auto_delay()
+
+    def _recompute_auto_delay(self):
+        if not getattr(self, "auto_delay_check", None) or not self.auto_delay_check.isChecked():
+            return
+        window_s = self.nplc.value() * 20e-3
+        new_delay = max(0.0, self.step_size.value() - window_s)
+        if new_delay > self.delay.maximum():
+            new_delay = self.delay.maximum()
+        self.delay.blockSignals(True)
+        self.delay.setValue(new_delay)
+        self.delay.blockSignals(False)
+
+
+class ExperimentsSidebar(QGroupBox):
+    """Sidebar listing saved experiments with action buttons + notes."""
+
+    experiment_selected = pyqtSignal(str)   # emitted when user picks one from the list
+    save_requested = pyqtSignal(str)        # emitted when user wants to save current state under a name
+    rename_requested = pyqtSignal(str, str) # (old_name, new_name)
+    delete_requested = pyqtSignal(str)
+    new_requested = pyqtSignal(str)         # new experiment with this name (saved immediately)
+    clone_requested = pyqtSignal(str, str)  # (source_name, new_name)
+    notes_changed = pyqtSignal(str)
+
+    def __init__(self, store: ExperimentStore, parent=None):
+        super().__init__("Experiments", parent)
+        self.store = store
+        self._current_name: Optional[str] = None
+        self._dirty = False
+        self._suppress_select = False
+        self._setup_ui()
+        self.refresh()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        self.current_label = QLabel("(Untitled)")
+        self.current_label.setStyleSheet("font-weight: bold; color: #1a1a2e;")
+        layout.addWidget(self.current_label)
+
+        self.list_widget = QListWidget()
+        self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self.list_widget, stretch=1)
+
+        # Action buttons
+        btn_grid = QGridLayout()
+        btn_grid.setSpacing(4)
+
+        load_btn = QPushButton("Load")
+        load_btn.setToolTip("Load the selected experiment (also: double-click an item in the list)")
+        load_btn.clicked.connect(self._on_load_clicked)
+        btn_grid.addWidget(load_btn, 0, 0)
+
+        new_btn = QPushButton("New")
+        new_btn.setToolTip("Create a new experiment in the list (prompts for a name)")
+        new_btn.clicked.connect(self._on_new_clicked)
+        btn_grid.addWidget(new_btn, 0, 1)
+
+        save_btn = QPushButton("Save")
+        save_btn.setToolTip("Save current state to the loaded experiment (or prompt for a name if none)")
+        save_btn.clicked.connect(self._on_save_clicked)
+        btn_grid.addWidget(save_btn, 1, 0)
+
+        save_as_btn = QPushButton("Save As…")
+        save_as_btn.setToolTip("Save current state as a new experiment")
+        save_as_btn.clicked.connect(self._on_save_as_clicked)
+        btn_grid.addWidget(save_as_btn, 1, 1)
+
+        rename_btn = QPushButton("Rename")
+        rename_btn.setToolTip("Rename the loaded experiment (or name an untitled one)")
+        rename_btn.clicked.connect(self._on_rename_clicked)
+        btn_grid.addWidget(rename_btn, 2, 0)
+
+        clone_btn = QPushButton("Clone")
+        clone_btn.setToolTip("Duplicate the selected experiment under a new name")
+        clone_btn.clicked.connect(self._on_clone_clicked)
+        btn_grid.addWidget(clone_btn, 2, 1)
+
+        delete_btn = QPushButton("Delete")
+        delete_btn.setToolTip("Delete the selected experiment (data CSVs are kept)")
+        delete_btn.clicked.connect(self._on_delete_clicked)
+        btn_grid.addWidget(delete_btn, 3, 0, 1, 2)
+
+        layout.addLayout(btn_grid)
+
+        layout.addWidget(QLabel("Notes:"))
+        self.notes = QTextEdit()
+        self.notes.setMaximumHeight(120)
+        self.notes.setPlaceholderText("Free-text notes for this experiment…")
+        self.notes.textChanged.connect(lambda: self.notes_changed.emit(self.notes.toPlainText()))
+        layout.addWidget(self.notes)
+
+    # --- public API used by main window ---
+
+    def refresh(self):
+        self._suppress_select = True
+        self.list_widget.clear()
+        for name in self.store.names():
+            self.list_widget.addItem(name)
+            if name == self._current_name:
+                self.list_widget.setCurrentRow(self.list_widget.count() - 1)
+        self._suppress_select = False
+        self._update_label()
+
+    def set_current(self, name: Optional[str], notes: str = ""):
+        """Set the currently-loaded experiment (without firing experiment_selected)."""
+        self._current_name = name
+        self._dirty = False
+        self._suppress_select = True
+        self.list_widget.clearSelection()
+        if name:
+            for i in range(self.list_widget.count()):
+                if self.list_widget.item(i).text() == name:
+                    self.list_widget.setCurrentRow(i)
+                    break
+        self._suppress_select = False
+        self.notes.blockSignals(True)
+        self.notes.setPlainText(notes or "")
+        self.notes.blockSignals(False)
+        self._update_label()
+
+    def mark_dirty(self, dirty: bool = True):
+        if self._dirty == dirty:
+            return
+        self._dirty = dirty
+        self._update_label()
+
+    def current_name(self) -> Optional[str]:
+        return self._current_name
+
+    def is_dirty(self) -> bool:
+        return self._dirty
+
+    # --- internal handlers ---
+
+    def _update_label(self):
+        name = self._current_name or "(Untitled)"
+        dot = "● " if self._dirty else ""
+        self.current_label.setText(f"{dot}{name}")
+
+    def _selected_name(self) -> Optional[str]:
+        items = self.list_widget.selectedItems()
+        return items[0].text() if items else None
+
+    def _on_new_clicked(self):
+        existing = set(self.store.names())
+        i = 1
+        while f"Experiment {i}" in existing:
+            i += 1
+        default = f"Experiment {i}"
+        name, ok = QInputDialog.getText(self, "New Experiment",
+                                         "Name:", QLineEdit.Normal, default)
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        if name in existing:
+            QMessageBox.warning(self, "New", f"'{name}' is already taken.")
+            return
+        self.new_requested.emit(name)
+
+    def _on_load_clicked(self):
+        name = self._selected_name()
+        if not name:
+            QMessageBox.information(self, "Load", "Select an experiment from the list first.")
+            return
+        if name == self._current_name and not self._dirty:
+            return  # nothing to do
+        self.experiment_selected.emit(name)
+
+    def _on_item_double_clicked(self, item):
+        if item is None:
+            return
+        name = item.text()
+        if name == self._current_name and not self._dirty:
+            return
+        self.experiment_selected.emit(name)
+
+    def _on_save_clicked(self):
+        if self._current_name:
+            self.save_requested.emit(self._current_name)
+        else:
+            self._on_save_as_clicked()
+
+    def _on_save_as_clicked(self):
+        name, ok = QInputDialog.getText(self, "Save Experiment As",
+                                         "Experiment name:", QLineEdit.Normal,
+                                         self._current_name or "")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        if name in self.store.names() and name != self._current_name:
+            reply = QMessageBox.question(self, "Overwrite?",
+                                          f"An experiment named '{name}' already exists. Overwrite?",
+                                          QMessageBox.Yes | QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                return
+        self.save_requested.emit(name)
+
+    def _on_rename_clicked(self):
+        # If nothing loaded, treat as Save As (name the current state).
+        if not self._current_name:
+            self._on_save_as_clicked()
+            return
+        new_name, ok = QInputDialog.getText(self, "Rename Experiment",
+                                             "New name:", QLineEdit.Normal,
+                                             self._current_name)
+        new_name = (new_name or "").strip()
+        if not ok or not new_name or new_name == self._current_name:
+            return
+        if new_name in self.store.names():
+            QMessageBox.warning(self, "Rename", f"'{new_name}' is already taken.")
+            return
+        self.rename_requested.emit(self._current_name, new_name)
+
+    def _on_clone_clicked(self):
+        # Clone whatever is selected in the list (falls back to currently loaded).
+        items = self.list_widget.selectedItems()
+        source = items[0].text() if items else self._current_name
+        if not source:
+            QMessageBox.information(self, "Clone",
+                                     "Select an experiment to clone, or save the current state first.")
+            return
+        default = f"{source} (copy)"
+        # Avoid colliding with existing names
+        existing = set(self.store.names())
+        if default in existing:
+            i = 2
+            while f"{source} (copy {i})" in existing:
+                i += 1
+            default = f"{source} (copy {i})"
+        new_name, ok = QInputDialog.getText(self, "Clone Experiment",
+                                             "Name for the copy:", QLineEdit.Normal,
+                                             default)
+        new_name = (new_name or "").strip()
+        if not ok or not new_name:
+            return
+        if new_name in existing:
+            QMessageBox.warning(self, "Clone", f"'{new_name}' is already taken.")
+            return
+        self.clone_requested.emit(source, new_name)
+
+    def _on_delete_clicked(self):
+        name = self._selected_name() or self._current_name
+        if not name:
+            QMessageBox.information(self, "Delete", "Select an experiment to delete.")
+            return
+        reply = QMessageBox.question(self, "Delete experiment?",
+                                      f"Delete '{name}'?\n(CSV data is kept.)",
+                                      QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.delete_requested.emit(name)
 
 
 class SweepListWidget(QGroupBox):
@@ -891,45 +1233,46 @@ class SweepListWidget(QGroupBox):
         self.table.setMaximumHeight(200)
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: #202030;
-                color: #e5e7eb;
-                gridline-color: #374151;
+                background-color: #ffffff;
+                color: #1a1a2e;
+                gridline-color: #d1d5db;
                 font-size: 13px;
+                alternate-background-color: #f9fafb;
             }
-            QTableWidget::item { color: #e5e7eb; }
+            QTableWidget::item { color: #1a1a2e; }
             QHeaderView::section {
-                background-color: #252536;
-                color: #e5e7eb;
+                background-color: #f3f4f6;
+                color: #1a1a2e;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 6px;
-                border: 1px solid #374151;
+                border: 1px solid #d1d5db;
             }
         """)
         layout.addWidget(self.table)
 
-        linear_layout = QHBoxLayout()
-        linear_layout.addWidget(QLabel("Start:"))
+        # Linear sweep settings (form layout so labels stack above values when narrow)
+        linear_form = QFormLayout()
+        linear_form.setLabelAlignment(Qt.AlignLeft)
+        linear_form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         self.start_val = QDoubleSpinBox()
         self.start_val.setRange(-105, 105)
         self.start_val.setDecimals(4)
         self.start_val.setValue(0)
-        linear_layout.addWidget(self.start_val)
+        linear_form.addRow("Start:", self.start_val)
 
-        linear_layout.addWidget(QLabel("Stop:"))
         self.stop_val = QDoubleSpinBox()
         self.stop_val.setRange(-105, 105)
         self.stop_val.setDecimals(4)
         self.stop_val.setValue(5)
-        linear_layout.addWidget(self.stop_val)
+        linear_form.addRow("Stop:", self.stop_val)
 
-        linear_layout.addWidget(QLabel("Points:"))
         self.num_points = QSpinBox()
         self.num_points.setRange(2, 10000)
         self.num_points.setValue(51)
-        linear_layout.addWidget(self.num_points)
+        linear_form.addRow("Points:", self.num_points)
 
-        layout.addLayout(linear_layout)
+        layout.addLayout(linear_form)
 
         btn_layout1 = QHBoxLayout()
         gen_btn = QPushButton("Linear")
@@ -955,20 +1298,19 @@ class SweepListWidget(QGroupBox):
         btn_layout2.addWidget(clear_btn)
         layout.addLayout(btn_layout2)
 
-        wave_layout = QHBoxLayout()
-        wave_btn = QPushButton("Wave Generator")
+        wave_btn = QPushButton("\U0001f30a Wave Generator")
+        wave_btn.setMinimumWidth(0)
+        wave_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         wave_btn.setStyleSheet("""
             QPushButton {
-                background-color: #374151; color: #e5e7eb;
+                background-color: #17a2b8; color: white;
                 font-family: 'Inter'; font-size: 14px;
-                font-weight: 600; padding: 8px 20px; border-radius: 6px; border: none;
+                font-weight: bold; padding: 8px 10px;
             }
-            QPushButton:hover { background-color: #4b5563; }
+            QPushButton:hover { background-color: #138496; }
         """)
         wave_btn.clicked.connect(self.wave_generator_requested.emit)
-        wave_layout.addWidget(wave_btn)
-        wave_layout.addStretch()
-        layout.addLayout(wave_layout)
+        layout.addWidget(wave_btn)
 
     def _generate_linear(self):
         start = self.start_val.value()
@@ -1042,13 +1384,13 @@ class DualAxisGraph(pg.PlotWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setBackground('#1a1a2e')
-        self.showGrid(x=True, y=True, alpha=0.2)
+        self.setBackground('#ffffff')
+        self.showGrid(x=True, y=True, alpha=0.3)
 
         self.data_points: List[MeasurementPoint] = []
 
-        self.setLabel('left', 'Current', units='A', color='#ffaa00')
-        self.setLabel('bottom', 'Voltage', units='V')
+        self.setLabel('left', 'Current', units='A', color='#1a1a2e')
+        self.setLabel('bottom', 'Voltage', units='V', color='#1a1a2e')
 
         self.view_box2 = pg.ViewBox()
         self.plotItem.scene().addItem(self.view_box2)
@@ -1155,20 +1497,20 @@ class DataTableWidget(QTableWidget):
         self.setAlternatingRowColors(True)
         self.setStyleSheet("""
             QTableWidget {
-                background-color: #202030;
-                alternate-background-color: #1e1e30;
-                color: #e5e7eb;
-                gridline-color: #374151;
+                background-color: #ffffff;
+                alternate-background-color: #f9fafb;
+                color: #1a1a2e;
+                gridline-color: #d1d5db;
                 font-size: 13px;
             }
-            QTableWidget::item { color: #e5e7eb; padding: 4px; }
+            QTableWidget::item { color: #1a1a2e; padding: 4px; }
             QHeaderView::section {
-                background-color: #252536;
-                color: #e5e7eb;
+                background-color: #f3f4f6;
+                color: #1a1a2e;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 8px 5px;
-                border: 1px solid #374151;
+                border: 1px solid #d1d5db;
             }
         """)
 
@@ -1258,7 +1600,7 @@ class ConnectionDialog(QDialog):
         # Separator
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("background-color: #374151;")
+        line.setStyleSheet("background-color: #d1d5db;")
         layout.addWidget(line)
 
         # Simulation section
@@ -1296,7 +1638,7 @@ class ConnectionDialog(QDialog):
 
         simulate_btn = QPushButton("Start Simulation")
         simulate_btn.setStyleSheet(
-            "background-color: #e5e7eb; color: #1a1a2e; font-family: 'Inter'; "
+            "background-color: #1a1a2e; color: #ffffff; font-family: 'Inter'; "
             "font-weight: 600; padding: 8px 20px; font-size: 14px; border-radius: 6px; border: none;"
         )
         simulate_btn.clicked.connect(self._simulate)
@@ -1542,14 +1884,19 @@ understand it, and agree to be bound by its terms and conditions."""
 class WaveToolDialog(QDialog):
     """Wave Generator Tool - Creates multi-segment waveforms for I-V sweeps"""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, get_resistance_fn=None):
         super().__init__(parent)
         self.setWindowTitle("Wave Generator Tool")
-        self.setMinimumSize(1050, 800)
+        self.setMinimumSize(520, 600)
+        self.resize(1050, 800)
         self.waveform_values = []
         self.time_values = []
         self.segments = []
         self._current_segment_index = -1
+        self._get_resistance_fn = get_resistance_fn
+        self._live_r_timer = QTimer(self)
+        self._live_r_timer.setInterval(500)
+        self._live_r_timer.timeout.connect(self._pull_live_resistance)
         self._setup_ui()
 
     def _default_segment(self):
@@ -1579,6 +1926,14 @@ class WaveToolDialog(QDialog):
         self.res_unit = QComboBox()
         self.res_unit.addItems(["Ω", "kΩ", "MΩ", "GΩ"])
         res_layout.addWidget(self.res_unit)
+        self.measure_r_btn = QPushButton("Measure R")
+        self.measure_r_btn.setToolTip("Read current R from the multimeter and fill the field")
+        self.measure_r_btn.clicked.connect(self._measure_resistance_once)
+        res_layout.addWidget(self.measure_r_btn)
+        self.live_r_check = QCheckBox("Live R")
+        self.live_r_check.setToolTip("Continuously update R from the multimeter (must be running)")
+        self.live_r_check.toggled.connect(self._toggle_live_resistance)
+        res_layout.addWidget(self.live_r_check)
         global_form.addRow("Resistance (R):", res_layout)
 
         self.design_mode = QComboBox()
@@ -1592,32 +1947,33 @@ class WaveToolDialog(QDialog):
         global_group.setLayout(global_form)
         layout.addWidget(global_group)
 
-        # --- Segments Section ---
-        segments_layout = QHBoxLayout()
+        # --- Segments Section (splitter so user can resize; reorients on narrow widths) ---
+        self._segments_splitter = QSplitter(Qt.Horizontal)
 
-        seg_list_layout = QVBoxLayout()
+        seg_list_panel = QWidget()
+        seg_list_layout = QVBoxLayout(seg_list_panel)
+        seg_list_layout.setContentsMargins(0, 0, 0, 0)
         seg_list_label = QLabel("<b>Segments</b>")
         seg_list_layout.addWidget(seg_list_label)
         self.segment_list = QListWidget()
-        self.segment_list.setMaximumWidth(200)
         self.segment_list.currentRowChanged.connect(self._on_segment_selected)
         seg_list_layout.addWidget(self.segment_list)
 
-        seg_btn_layout = QHBoxLayout()
+        seg_btn_layout = QVBoxLayout()
+        seg_btn_layout.setSpacing(4)
         for text, tooltip, handler in [
-            ("+", "Add segment", self._add_segment),
-            ("−", "Remove segment", self._remove_segment),
-            ("▲", "Move up", self._move_segment_up),
-            ("▼", "Move down", self._move_segment_down),
-            ("Dup", "Duplicate segment", self._duplicate_segment),
+            ("Add segment", "Append a new segment after the current one", self._add_segment),
+            ("Duplicate segment", "Copy the current segment and insert it after", self._duplicate_segment),
+            ("Remove segment", "Delete the current segment", self._remove_segment),
+            ("Move up", "Swap the current segment with the one above", self._move_segment_up),
+            ("Move down", "Swap the current segment with the one below", self._move_segment_down),
         ]:
             btn = QPushButton(text)
             btn.setToolTip(tooltip)
-            btn.setFixedWidth(36)
             btn.clicked.connect(handler)
             seg_btn_layout.addWidget(btn)
         seg_list_layout.addLayout(seg_btn_layout)
-        segments_layout.addLayout(seg_list_layout)
+        self._segments_splitter.addWidget(seg_list_panel)
 
         self.seg_editor_group = QGroupBox("Segment 1")
         seg_form = QFormLayout()
@@ -1677,35 +2033,37 @@ class WaveToolDialog(QDialog):
         seg_form.addRow("Step Size (dt):", step_layout)
 
         self.seg_editor_group.setLayout(seg_form)
-        segments_layout.addWidget(self.seg_editor_group)
-
-        layout.addLayout(segments_layout)
+        self._segments_splitter.addWidget(self.seg_editor_group)
+        self._segments_splitter.setSizes([220, 600])
+        self._segments_splitter.setStretchFactor(0, 0)
+        self._segments_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._segments_splitter)
 
         preview_btn = QPushButton("Preview Waveform")
         preview_btn.setStyleSheet(
-            "background-color: #374151; color: #e5e7eb; font-family: 'Inter'; "
-            "font-size: 15px; padding: 12px; font-weight: bold;"
+            "background-color: #f3f4f6; color: #1a1a2e; border: 1px solid #d1d5db; "
+            "font-family: 'Inter'; font-size: 15px; padding: 12px; font-weight: bold;"
         )
         preview_btn.clicked.connect(self._preview)
         layout.addWidget(preview_btn)
 
         self.info_label = QLabel("Configure parameters and click Preview")
-        self.info_label.setStyleSheet("color: #9ca3af; font-style: italic;")
+        self.info_label.setStyleSheet("color: #6b7280; font-style: italic;")
         layout.addWidget(self.info_label)
 
         self.preview_graph = pg.PlotWidget()
-        self.preview_graph.setBackground('#1a1a2e')
-        self.preview_graph.setLabel('left', 'Output Value', color='#e5e7eb')
-        self.preview_graph.setLabel('bottom', 'Time (s)', color='#e5e7eb')
-        self.preview_graph.setTitle("Waveform Preview", color='#e5e7eb', size='14pt')
-        self.preview_graph.showGrid(x=True, y=True, alpha=0.2)
+        self.preview_graph.setBackground('#ffffff')
+        self.preview_graph.setLabel('left', 'Output Value', color='#1a1a2e')
+        self.preview_graph.setLabel('bottom', 'Time (s)', color='#1a1a2e')
+        self.preview_graph.setTitle("Waveform Preview", color='#1a1a2e', size='14pt')
+        self.preview_graph.showGrid(x=True, y=True, alpha=0.3)
         self.preview_graph.setMinimumHeight(200)
         layout.addWidget(self.preview_graph)
 
         btn_layout = QHBoxLayout()
         generate_btn = QPushButton("Generate && Import to Sweep List")
         generate_btn.setStyleSheet(
-            "background-color: #e5e7eb; color: #1a1a2e; font-family: 'Inter'; "
+            "background-color: #1a1a2e; color: #ffffff; font-family: 'Inter'; "
             "font-size: 15px; padding: 12px; font-weight: bold;"
         )
         generate_btn.clicked.connect(self._generate_and_accept)
@@ -1811,6 +2169,51 @@ class WaveToolDialog(QDialog):
         self._update_segment_list()
         self._current_segment_index = -1
         self.segment_list.setCurrentRow(idx + 1)
+
+    def _apply_measured_resistance(self, r_ohms: float):
+        abs_r = abs(r_ohms)
+        if abs_r >= 1e9:
+            unit, scale = "GΩ", 1e9
+        elif abs_r >= 1e6:
+            unit, scale = "MΩ", 1e6
+        elif abs_r >= 1e3:
+            unit, scale = "kΩ", 1e3
+        else:
+            unit, scale = "Ω", 1.0
+        self.res_unit.setCurrentText(unit)
+        self.resistance.setValue(r_ohms / scale)
+
+    def _measure_resistance_once(self):
+        if not self._get_resistance_fn:
+            QMessageBox.information(self, "Measure R", "No SMU is connected.")
+            return
+        r = self._get_resistance_fn()
+        if r is None or not (1e-6 < abs(r) < 1e15):
+            QMessageBox.warning(self, "Measure R",
+                                "No valid resistance reading available.\n"
+                                "Turn the SMU output ON so current is flowing through the DUT, "
+                                "or run the Multimeter tab, then try again.")
+            return
+        self._apply_measured_resistance(r)
+
+    def _toggle_live_resistance(self, checked: bool):
+        self.resistance.setReadOnly(checked)
+        if checked:
+            if not self._get_resistance_fn:
+                QMessageBox.information(self, "Live R", "No SMU is connected.")
+                self.live_r_check.setChecked(False)
+                return
+            self._pull_live_resistance()
+            self._live_r_timer.start()
+        else:
+            self._live_r_timer.stop()
+
+    def _pull_live_resistance(self):
+        if not self._get_resistance_fn:
+            return
+        r = self._get_resistance_fn()
+        if r is not None and 1e-6 < abs(r) < 1e15:
+            self._apply_measured_resistance(r)
 
     def _duplicate_segment(self):
         import copy
@@ -1925,10 +2328,10 @@ class WaveToolDialog(QDialog):
                 f"Duration: {combined_t[-1]:.2f}s | "
                 f"Output: {min(combined_values):.4e} to {max(combined_values):.4e} {export_unit}"
             )
-            self.info_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
+            self.info_label.setStyleSheet("color: #1a1a2e; font-weight: bold;")
 
             self.preview_graph.clear()
-            self.preview_graph.plot(self.time_values, self.waveform_values, pen=pg.mkPen('#0d9488', width=2))
+            self.preview_graph.plot(self.time_values, self.waveform_values, pen=pg.mkPen('#16a34a', width=2))
             self.preview_graph.setLabel('left', f'Output ({export_unit})')
 
             if n_segs > 1:
@@ -1964,6 +2367,60 @@ class WaveToolDialog(QDialog):
     def get_waveform_values(self) -> List[float]:
         return self.waveform_values
 
+    def dump_state(self) -> dict:
+        """Serialize the dialog's current global settings + segments for persistence."""
+        # Make sure the in-flight segment edits are flushed
+        if self._current_segment_index >= 0:
+            self._save_current_segment()
+        return {
+            "resistance": self.resistance.value(),
+            "res_unit": self.res_unit.currentText(),
+            "design_mode": self.design_mode.currentText(),
+            "export_mode": self.export_mode.currentText(),
+            "segments": [dict(s) for s in self.segments],
+            "current_segment_index": self._current_segment_index,
+        }
+
+    def load_state(self, state: dict):
+        """Restore a previously-dumped state."""
+        if not state:
+            return
+        if "resistance" in state:
+            self.resistance.setValue(state["resistance"])
+        if state.get("res_unit"):
+            self.res_unit.setCurrentText(state["res_unit"])
+        if state.get("design_mode"):
+            self.design_mode.setCurrentText(state["design_mode"])
+        if state.get("export_mode"):
+            self.export_mode.setCurrentText(state["export_mode"])
+        segs = state.get("segments")
+        if segs:
+            self.segments = [dict(s) for s in segs]
+            self._current_segment_index = -1
+            self._update_segment_list()
+            target_idx = state.get("current_segment_index", 0)
+            if 0 <= target_idx < len(self.segments):
+                self.segment_list.setCurrentRow(target_idx)
+            else:
+                self.segment_list.setCurrentRow(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        splitter = getattr(self, "_segments_splitter", None)
+        if splitter is None:
+            return
+        target = Qt.Vertical if self.width() < 750 else Qt.Horizontal
+        if splitter.orientation() != target:
+            splitter.setOrientation(target)
+            if target == Qt.Vertical:
+                splitter.setSizes([220, 400])
+            else:
+                splitter.setSizes([220, max(400, self.width() - 280)])
+
+    def closeEvent(self, event):
+        self._live_r_timer.stop()
+        super().closeEvent(event)
+
 
 class Keithley6430App(QMainWindow):
     """Main application window for Keithley 6430 control"""
@@ -1984,6 +2441,13 @@ class Keithley6430App(QMainWindow):
         self.auto_save_enabled = True
         self.auto_save_path = os.path.join(os.path.expanduser("~"), "Documents", "K6430_Data")
 
+        # Experiments: named bundles of settings + sweep list + wave config + notes
+        self.experiment_store = ExperimentStore()
+        self._current_experiment_name: Optional[str] = None
+        self._current_experiment_notes: str = ""
+        self._current_wave_config: Optional[dict] = None
+        self._suppress_dirty = False
+
         # Live CSV streaming
         self._live_csv_file = None
         self._live_csv_writer = None
@@ -1992,7 +2456,8 @@ class Keithley6430App(QMainWindow):
         self.settings = QSettings(__organization__, __app_name__)
 
         self.setWindowTitle(f"{__app_name__} — {__app_subtitle__}")
-        self.setMinimumSize(1000, 700)
+        self.setMinimumSize(560, 480)
+        self.resize(1200, 800)
 
         if not self._check_license_agreement():
             sys.exit(0)
@@ -2093,7 +2558,7 @@ class Keithley6430App(QMainWindow):
         header.setFixedHeight(44)
         header.setStyleSheet("""
             QFrame {
-                background-color: #252536;
+                background-color: #1a1a2e;
             }
         """)
         header_layout = QHBoxLayout(header)
@@ -2130,21 +2595,36 @@ class Keithley6430App(QMainWindow):
 
         self.connection_label = QLabel("Disconnected")
         self.connection_label.setStyleSheet(
-            "color: #9ca3af; font-family: 'Inter'; font-weight: bold; font-size: 15px;"
+            "color: #6b7280; font-family: 'Inter'; font-weight: bold; font-size: 15px;"
         )
         toolbar.addWidget(self.connection_label)
+
+        toolbar.addStretch()
+
+        # Output toggle button (6430 is single-channel)
+        self.output_btn = QPushButton("OUT: OFF")
+        self.output_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ffffff; color: #1a1a2e;
+                font-family: 'Inter'; font-size: 14px; font-weight: 600;
+                padding: 8px 16px; border-radius: 6px; border: 1px solid #d1d5db;
+            }
+            QPushButton:hover { background-color: #f3f4f6; }
+        """)
+        self.output_btn.clicked.connect(self._toggle_output)
+        toolbar.addWidget(self.output_btn)
 
         toolbar.addStretch()
 
         self.start_btn = QPushButton("START SWEEP")
         self.start_btn.setStyleSheet("""
             QPushButton {
-                background-color: #e5e7eb; color: #1a1a2e;
+                background-color: #1a1a2e; color: #ffffff;
                 font-family: 'Inter'; font-size: 14px; font-weight: bold;
                 padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #ffffff; }
-            QPushButton:disabled { background-color: #252536; color: #4b5563; }
+            QPushButton:hover { background-color: #374151; }
+            QPushButton:disabled { background-color: #e5e7eb; color: #9ca3af; }
         """)
         self.start_btn.clicked.connect(self.start_sweep)
         toolbar.addWidget(self.start_btn)
@@ -2152,78 +2632,107 @@ class Keithley6430App(QMainWindow):
         self.stop_btn = QPushButton("STOP")
         self.stop_btn.setStyleSheet("""
             QPushButton {
-                background-color: #374151; color: #e5e7eb;
+                background-color: #dc2626; color: #ffffff;
                 font-family: 'Inter'; font-size: 14px; font-weight: bold;
                 padding: 8px 20px; border-radius: 6px; border: none;
             }
-            QPushButton:hover { background-color: #4b5563; }
-            QPushButton:disabled { background-color: #252536; color: #4b5563; }
+            QPushButton:hover { background-color: #b91c1c; }
+            QPushButton:disabled { background-color: #e5e7eb; color: #9ca3af; }
         """)
         self.stop_btn.clicked.connect(self.stop_sweep)
         self.stop_btn.setEnabled(False)
         toolbar.addWidget(self.stop_btn)
 
-        export_btn = QPushButton("Export CSV")
-        export_btn.clicked.connect(self.export_csv)
-        toolbar.addWidget(export_btn)
+        self.export_btn = QPushButton("Export CSV")
+        self.export_btn.clicked.connect(self.export_csv)
+        toolbar.addWidget(self.export_btn)
+
+        # Buttons that only make sense on the I-V Sweep tab
+        self._sweep_only_widgets = [self.start_btn, self.stop_btn, self.export_btn]
 
         content_layout.addLayout(toolbar)
 
         # Main tabs
         tabs = QTabWidget()
+        self.main_tabs = tabs
+        tabs.currentChanged.connect(self._on_main_tab_changed)
 
-        # Tab 1: Multimeter
+        # Tab 1: Multimeter (wrapped in a scroll area so it never clips)
         self.multimeter_panel = MultimeterPanel(self)
-        tabs.addTab(self.multimeter_panel, "Multimeter")
+        mm_scroll = QScrollArea()
+        mm_scroll.setWidgetResizable(True)
+        mm_scroll.setFrameShape(QFrame.NoFrame)
+        mm_scroll.setWidget(self.multimeter_panel)
+        tabs.addTab(mm_scroll, "Multimeter")
 
         # Tab 2: I-V Sweep
         sweep_tab = QWidget()
         sweep_outer = QVBoxLayout(sweep_tab)
         sweep_outer.setContentsMargins(0, 0, 0, 0)
 
-        # Use QSplitter for responsive 3-column layout
-        sweep_splitter = QSplitter(Qt.Horizontal)
+        # Horizontal splitter: experiments sidebar (left) | three sub-tabs (right)
+        iv_outer_splitter = QSplitter(Qt.Horizontal)
 
-        # Left panel: Settings
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setMinimumWidth(200)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.experiments_sidebar = ExperimentsSidebar(self.experiment_store)
+        self.experiments_sidebar.experiment_selected.connect(self._load_experiment)
+        self.experiments_sidebar.save_requested.connect(self._save_experiment)
+        self.experiments_sidebar.rename_requested.connect(self._rename_experiment)
+        self.experiments_sidebar.delete_requested.connect(self._delete_experiment)
+        self.experiments_sidebar.new_requested.connect(self._new_experiment)
+        self.experiments_sidebar.clone_requested.connect(self._clone_experiment)
+        self.experiments_sidebar.notes_changed.connect(self._on_notes_changed)
+        iv_outer_splitter.addWidget(self.experiments_sidebar)
 
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setSpacing(10)
+        # Three sub-tabs inside I-V Sweep: Settings / Sweep Values / Graph
+        iv_sub_tabs = QTabWidget()
+
+        # --- Sub-tab 1: Settings ---
+        settings_panel = QWidget()
+        settings_layout = QVBoxLayout(settings_panel)
+        settings_layout.setSpacing(10)
 
         self.source_settings = SourceSettingsWidget()
-        left_layout.addWidget(self.source_settings)
+        settings_layout.addWidget(self.source_settings)
 
         self.inst_settings = InstrumentSettingsWidget()
-        left_layout.addWidget(self.inst_settings)
+        settings_layout.addWidget(self.inst_settings)
 
         self.measure_settings = MeasureSettingsWidget()
-        left_layout.addWidget(self.measure_settings)
+        settings_layout.addWidget(self.measure_settings)
 
         self.timing_settings = TimingSettingsWidget()
-        left_layout.addWidget(self.timing_settings)
+        settings_layout.addWidget(self.timing_settings)
 
-        left_layout.addStretch()
-        left_scroll.setWidget(left_panel)
-        sweep_splitter.addWidget(left_scroll)
+        settings_layout.addStretch()
 
-        # Middle panel: Sweep list
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setFrameShape(QFrame.NoFrame)
+        settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        settings_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        settings_scroll.setWidget(settings_panel)
+        iv_sub_tabs.addTab(settings_scroll, "Settings")
+
+        # --- Sub-tab 2: Sweep Values ---
         self.sweep_list = SweepListWidget()
-        self.sweep_list.setMinimumWidth(200)
         self.sweep_list.wave_generator_requested.connect(self._show_wave_tool)
-        sweep_splitter.addWidget(self.sweep_list)
 
-        # Right panel: Graph and Table
-        right_splitter = QSplitter(Qt.Vertical)
+        sweep_scroll = QScrollArea()
+        sweep_scroll.setWidgetResizable(True)
+        sweep_scroll.setFrameShape(QFrame.NoFrame)
+        sweep_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        sweep_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        sweep_scroll.setWidget(self.sweep_list)
+        iv_sub_tabs.addTab(sweep_scroll, "Sweep Values")
 
-        graph_widget = QWidget()
-        graph_layout = QVBoxLayout(graph_widget)
-        graph_layout.setContentsMargins(0, 0, 0, 0)
+        # --- Sub-tab 3: Graph ---
+        graph_tab = QWidget()
+        graph_tab_layout = QVBoxLayout(graph_tab)
+        graph_tab_layout.setContentsMargins(0, 0, 0, 0)
 
-        axis_layout = QHBoxLayout()
+        axis_bar = QWidget()
+        axis_layout = QHBoxLayout(axis_bar)
+        axis_layout.setContentsMargins(0, 0, 0, 0)
 
         axis_layout.addWidget(QLabel("X:"))
         self.x_axis = QComboBox()
@@ -2249,8 +2758,7 @@ class Keithley6430App(QMainWindow):
                                      ("V,P-t", ("Time", "Voltage", "Power")),
                                      ("I,R-t", ("Time", "Current", "Resistance"))]:
             btn = QPushButton(preset)
-            btn.setMinimumWidth(55)
-            btn.setMaximumWidth(70)
+            btn.setMaximumWidth(80)
             btn.clicked.connect(lambda checked, x=x, y1=y1, y2=y2: self._set_graph_preset(x, y1, y2))
             axis_layout.addWidget(btn)
 
@@ -2260,24 +2768,33 @@ class Keithley6430App(QMainWindow):
         self.live_update_cb.setChecked(True)
         axis_layout.addWidget(self.live_update_cb)
 
-        graph_layout.addLayout(axis_layout)
+        graph_tab_layout.addWidget(axis_bar)
+
+        # Graph + table share a vertical splitter so the user can decide the ratio
+        graph_table_splitter = QSplitter(Qt.Vertical)
 
         self.graph = DualAxisGraph()
-        graph_layout.addWidget(self.graph)
-
-        right_splitter.addWidget(graph_widget)
+        self.graph.setMinimumSize(0, 0)
+        graph_table_splitter.addWidget(self.graph)
 
         self.table = DataTableWidget()
-        right_splitter.addWidget(self.table)
+        self.table.setMinimumSize(0, 0)
+        graph_table_splitter.addWidget(self.table)
 
-        right_splitter.setSizes([500, 300])
-        sweep_splitter.addWidget(right_splitter)
+        graph_table_splitter.setSizes([500, 300])
+        graph_table_splitter.setCollapsible(0, True)
+        graph_table_splitter.setCollapsible(1, True)
+        graph_tab_layout.addWidget(graph_table_splitter)
 
-        sweep_splitter.setSizes([250, 250, 750])
-        sweep_splitter.setStretchFactor(0, 1)
-        sweep_splitter.setStretchFactor(1, 1)
-        sweep_splitter.setStretchFactor(2, 3)
-        sweep_outer.addWidget(sweep_splitter)
+        iv_sub_tabs.addTab(graph_tab, "Graph")
+
+        iv_outer_splitter.addWidget(iv_sub_tabs)
+        iv_outer_splitter.setSizes([240, 1000])
+        iv_outer_splitter.setStretchFactor(0, 0)
+        iv_outer_splitter.setStretchFactor(1, 1)
+        iv_outer_splitter.setCollapsible(0, True)
+        iv_outer_splitter.setCollapsible(1, False)
+        sweep_outer.addWidget(iv_outer_splitter)
 
         tabs.addTab(sweep_tab, "I-V Sweep")
 
@@ -2304,10 +2821,271 @@ class Keithley6430App(QMainWindow):
     def _setup_signals(self):
         self.measurement_update.connect(self._on_measurement_update)
         self.sweep_list.list_changed.connect(self._on_sweep_list_changed)
+        self._wire_dirty_tracking()
+        self._on_main_tab_changed(self.main_tabs.currentIndex())
+
+    def _on_main_tab_changed(self, index: int):
+        is_sweep_tab = self.main_tabs.tabText(index) == "I-V Sweep"
+        for w in self._sweep_only_widgets:
+            w.setVisible(is_sweep_tab)
 
     def _on_sweep_list_changed(self, count: int):
         if count > 0:
             self.timing_settings.points.setValue(count)
+        self._mark_dirty()
+
+    # === Experiments ===
+
+    def _wire_dirty_tracking(self):
+        ss = self.source_settings
+        ms = self.measure_settings
+        ts = self.timing_settings
+        slist = self.sweep_list
+
+        def hook(widget, signal_name):
+            sig = getattr(widget, signal_name, None)
+            if sig is not None:
+                sig.connect(self._mark_dirty)
+
+        for cb in [ss.mode, ss.range, ms.measure_range, ms.auto_zero,
+                   self.inst_settings.output_off_mode]:
+            hook(cb, "currentTextChanged")
+        for sb in [ss.compliance, ts.points, ts.repeat, ts.delay, ts.step_size, ts.nplc,
+                   slist.start_val, slist.stop_val, slist.num_points]:
+            hook(sb, "valueChanged")
+        hook(ms.measure_v, "toggled")
+        hook(ms.measure_i, "toggled")
+        hook(ms.measure_r, "toggled")
+        hook(ms.measure_p, "toggled")
+        hook(ts.auto_delay_check, "toggled")
+        hook(self.inst_settings.guard_mode, "toggled")
+
+    def _mark_dirty(self, *args):
+        if self._suppress_dirty:
+            return
+        self.experiments_sidebar.mark_dirty(True)
+
+    def _capture_state(self) -> dict:
+        ss = self.source_settings
+        ms = self.measure_settings
+        ts = self.timing_settings
+        slist = self.sweep_list
+        inst = self.inst_settings
+        return {
+            "source": {
+                "function": ss.function,
+                "mode": ss.mode.currentText(),
+                "range": ss.range.currentText(),
+                "compliance": ss.compliance.value(),
+            },
+            "instrument": {
+                "sense": inst.sense,
+                "guard": inst.guard_mode.isChecked(),
+                "output_off": inst.output_off_mode.currentText(),
+            },
+            "measure": {
+                "v": ms.measure_v.isChecked(),
+                "i": ms.measure_i.isChecked(),
+                "r": ms.measure_r.isChecked(),
+                "p": ms.measure_p.isChecked(),
+                "measure_range": ms.measure_range.currentText(),
+                "auto_zero": ms.auto_zero.currentText(),
+            },
+            "timing": {
+                "points": ts.points.value(),
+                "repeat": ts.repeat.value(),
+                "delay": ts.delay.value(),
+                "step_size": ts.step_size.value(),
+                "auto_delay": ts.auto_delay_check.isChecked(),
+                "nplc": ts.nplc.value(),
+            },
+            "sweep": {
+                "values": list(slist.sweep_values),
+                "start": slist.start_val.value(),
+                "stop": slist.stop_val.value(),
+                "num_points": slist.num_points.value(),
+            },
+            "wave_config": self._current_wave_config,
+            "notes": self._current_experiment_notes,
+        }
+
+    def _apply_state(self, exp: dict):
+        self._suppress_dirty = True
+        try:
+            ss = self.source_settings
+            ms = self.measure_settings
+            ts = self.timing_settings
+            slist = self.sweep_list
+            inst = self.inst_settings
+
+            src = exp.get("source", {})
+            if src.get("function"):
+                ss._set_function(src["function"])
+            if src.get("mode"):
+                ss.mode.setCurrentText(src["mode"])
+            if src.get("range"):
+                # Range items change with function; only apply if present in current list
+                idx = ss.range.findText(src["range"])
+                if idx >= 0:
+                    ss.range.setCurrentIndex(idx)
+            if "compliance" in src:
+                ss.compliance.setValue(src["compliance"])
+
+            instd = exp.get("instrument", {})
+            if instd.get("sense"):
+                inst._set_sense(instd["sense"])
+            if "guard" in instd:
+                inst.guard_mode.setChecked(bool(instd["guard"]))
+            if instd.get("output_off"):
+                inst.output_off_mode.setCurrentText(instd["output_off"])
+
+            md = exp.get("measure", {})
+            ms.measure_v.setChecked(bool(md.get("v", True)))
+            ms.measure_i.setChecked(bool(md.get("i", True)))
+            ms.measure_r.setChecked(bool(md.get("r", False)))
+            ms.measure_p.setChecked(bool(md.get("p", False)))
+            if md.get("measure_range"):
+                idx = ms.measure_range.findText(md["measure_range"])
+                if idx >= 0:
+                    ms.measure_range.setCurrentIndex(idx)
+            if md.get("auto_zero"):
+                ms.auto_zero.setCurrentText(md["auto_zero"])
+
+            td = exp.get("timing", {})
+            if "points" in td: ts.points.setValue(td["points"])
+            if "repeat" in td: ts.repeat.setValue(td["repeat"])
+            if "delay" in td: ts.delay.setValue(td["delay"])
+            if "step_size" in td: ts.step_size.setValue(td["step_size"])
+            if "nplc" in td: ts.nplc.setValue(td["nplc"])
+            if "auto_delay" in td: ts.auto_delay_check.setChecked(bool(td["auto_delay"]))
+
+            sd = exp.get("sweep", {})
+            if "start" in sd: slist.start_val.setValue(sd["start"])
+            if "stop" in sd: slist.stop_val.setValue(sd["stop"])
+            if "num_points" in sd: slist.num_points.setValue(sd["num_points"])
+            if "values" in sd:
+                slist.sweep_values = list(sd["values"])
+                slist._update_table()
+
+            self._current_wave_config = exp.get("wave_config")
+            # If the dialog already exists in memory, push the config in too.
+            if getattr(self, "_wave_dialog", None) is not None and self._current_wave_config:
+                self._wave_dialog.load_state(self._current_wave_config)
+        finally:
+            self._suppress_dirty = False
+
+    def _load_experiment(self, name: str):
+        if self.experiments_sidebar.is_dirty():
+            reply = QMessageBox.question(self, "Unsaved changes",
+                                          "Discard unsaved changes to the current experiment?",
+                                          QMessageBox.Yes | QMessageBox.No)
+            if reply != QMessageBox.Yes:
+                # restore selection
+                self.experiments_sidebar.set_current(self._current_experiment_name,
+                                                     self._current_experiment_notes)
+                return
+        exp = self.experiment_store.get(name)
+        if not exp:
+            return
+        self._apply_state(exp)
+        self._current_experiment_name = name
+        self._current_experiment_notes = exp.get("notes", "")
+        self.experiments_sidebar.set_current(name, self._current_experiment_notes)
+        self.status.showMessage(f"Loaded experiment: {name}")
+
+    def _save_experiment(self, name: str):
+        payload = self._capture_state()
+        payload["notes"] = self._current_experiment_notes
+        self.experiment_store.save(name, payload)
+        self._current_experiment_name = name
+        self.experiments_sidebar.refresh()
+        self.experiments_sidebar.set_current(name, self._current_experiment_notes)
+        self.status.showMessage(f"Saved experiment: {name}")
+
+    def _rename_experiment(self, old: str, new: str):
+        self.experiment_store.rename(old, new)
+        self._current_experiment_name = new
+        self.experiments_sidebar.refresh()
+        self.experiments_sidebar.set_current(new, self._current_experiment_notes)
+        self.status.showMessage(f"Renamed: {old} → {new}")
+
+    def _delete_experiment(self, name: str):
+        self.experiment_store.delete(name)
+        if self._current_experiment_name == name:
+            self._current_experiment_name = None
+            self._current_experiment_notes = ""
+        self.experiments_sidebar.refresh()
+        self.experiments_sidebar.set_current(self._current_experiment_name,
+                                              self._current_experiment_notes)
+        self.status.showMessage(f"Deleted experiment: {name}")
+
+    def _new_experiment(self, name: str):
+        # Snapshot whatever the UI currently has and save it under the new name,
+        # then switch to it so the user can start editing immediately.
+        self._current_experiment_notes = ""
+        self._save_experiment(name)
+
+    def _clone_experiment(self, source: str, new_name: str):
+        record = self.experiment_store.get(source)
+        if record is None:
+            # Source isn't saved on disk — clone the current UI state instead
+            record = self._capture_state()
+            record["notes"] = self._current_experiment_notes
+        else:
+            record = dict(record)  # shallow copy to avoid mutating store entry
+        # Strip identity fields so save() treats it as a new record
+        for k in ("name", "created_at", "modified_at"):
+            record.pop(k, None)
+        self.experiment_store.save(new_name, record)
+        self.experiments_sidebar.refresh()
+        # Keep the currently-loaded experiment as-is (do NOT switch to the clone)
+        self.experiments_sidebar.set_current(self._current_experiment_name,
+                                              self._current_experiment_notes)
+        self.status.showMessage(f"Cloned '{source}' → '{new_name}'")
+
+    def _on_notes_changed(self, text: str):
+        self._current_experiment_notes = text
+        self._mark_dirty()
+
+    def _toggle_output(self):
+        if not self.smu or not getattr(self.smu, "_connected", False):
+            QMessageBox.warning(self, "Not Connected", "Please connect to instrument first")
+            return
+        try:
+            if self.smu.output_enabled():
+                self.smu.output_off()
+            else:
+                self.smu.output_on()
+            self._update_output_button()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def _update_output_button(self):
+        if not self.smu:
+            return
+        try:
+            if self.smu.output_enabled():
+                self.output_btn.setText("OUT: ON")
+                self.output_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #1a1a2e; color: #ffffff;
+                        font-family: 'Inter'; font-size: 14px; font-weight: 600;
+                        padding: 8px 16px; border-radius: 6px; border: none;
+                    }
+                    QPushButton:hover { background-color: #374151; }
+                """)
+            else:
+                self.output_btn.setText("OUT: OFF")
+                self.output_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #ffffff; color: #1a1a2e;
+                        font-family: 'Inter'; font-size: 14px; font-weight: 600;
+                        padding: 8px 16px; border-radius: 6px; border: 1px solid #d1d5db;
+                    }
+                    QPushButton:hover { background-color: #f3f4f6; }
+                """)
+        except Exception:
+            pass
 
     def _set_graph_preset(self, x, y1, y2):
         self.x_axis.setCurrentText(x)
@@ -2330,7 +3108,8 @@ class Keithley6430App(QMainWindow):
             self.smu.disconnect()
             self.smu = None
         self.connection_label.setText("Disconnected")
-        self.connection_label.setStyleSheet("color: #9ca3af; font-weight: bold; font-size: 15px;")
+        self.connection_label.setStyleSheet("color: #6b7280; font-weight: bold; font-size: 15px;")
+        self._update_output_button()
         self.status.showMessage("Disconnected")
 
     def _reset_instrument(self):
@@ -2408,20 +3187,54 @@ class Keithley6430App(QMainWindow):
             self.status.showMessage(f"Auto-save folder: {folder}")
 
     def _open_auto_save_folder(self):
-        if os.path.exists(self.auto_save_path):
+        if not os.path.exists(self.auto_save_path):
+            os.makedirs(self.auto_save_path, exist_ok=True)
+        if sys.platform == 'darwin':
+            os.system(f'open "{self.auto_save_path}"')
+        elif sys.platform == 'win32':
             os.startfile(self.auto_save_path)
         else:
-            os.makedirs(self.auto_save_path, exist_ok=True)
-            os.startfile(self.auto_save_path)
+            os.system(f'xdg-open "{self.auto_save_path}"')
+
+    def _oneshot_resistance(self) -> Optional[float]:
+        if not self.smu or not getattr(self.smu, "_connected", False):
+            return None
+        try:
+            if not self.smu.output_enabled():
+                return None
+            v = self.smu.measure_voltage()
+            i = self.smu.measure_current()
+            if v is None or i is None or abs(i) < 1e-18:
+                return None
+            return v / i
+        except Exception:
+            return None
+
+    def _get_live_resistance(self) -> Optional[float]:
+        panel = getattr(self, "multimeter_panel", None)
+        if panel is not None and getattr(panel, "running", False) and panel.last_resistance is not None:
+            return panel.last_resistance
+        r = self._oneshot_resistance()
+        if r is not None:
+            return r
+        return panel.last_resistance if panel is not None else None
 
     def _show_wave_tool(self):
-        dialog = WaveToolDialog(self)
+        if getattr(self, "_wave_dialog", None) is None:
+            self._wave_dialog = WaveToolDialog(self, get_resistance_fn=self._get_live_resistance)
+            # If the loaded experiment carried a wave config, restore it on first open
+            if self._current_wave_config:
+                self._wave_dialog.load_state(self._current_wave_config)
+        dialog = self._wave_dialog
         if dialog.exec_() == QDialog.Accepted:
             wave_values = dialog.get_waveform_values()
             if wave_values:
                 self.sweep_list.sweep_values = wave_values
                 self.sweep_list._update_table()
                 self.status.showMessage(f"Imported {len(wave_values)} points from Wave Generator")
+        # Remember the dialog state so we can persist it with the experiment
+        self._current_wave_config = dialog.dump_state()
+        self._mark_dirty()
 
     def _import_sweep_list(self):
         self.sweep_list._import_csv()
@@ -2517,12 +3330,13 @@ class Keithley6430App(QMainWindow):
             else:
                 res_str = f"{simulation_resistance:.0f}Ω"
             self.connection_label.setText(f"SIM ({res_str})")
-            self.connection_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
+            self.connection_label.setStyleSheet("color: #6b7280; font-weight: bold;")
         else:
             port_info = self.smu.get_serial_info()
             self.connection_label.setText(f"Connected ({port_info['port']} @ {port_info['baud_rate']})")
-            self.connection_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
+            self.connection_label.setStyleSheet("color: #16a34a; font-weight: bold;")
 
+        self._update_output_button()
         self.status.showMessage("Connected to Keithley 6430")
 
     def start_sweep(self):
@@ -2594,9 +3408,10 @@ class Keithley6430App(QMainWindow):
 
         # Open live CSV file for streaming
         try:
-            os.makedirs(self.auto_save_path, exist_ok=True)
+            save_dir = self._experiment_save_dir()
+            os.makedirs(save_dir, exist_ok=True)
             filename = self._generate_filename()
-            self._live_csv_path = os.path.join(self.auto_save_path, filename)
+            self._live_csv_path = os.path.join(save_dir, filename)
             self._live_csv_file = open(self._live_csv_path, 'w', newline='')
             self._live_csv_writer = csv.writer(self._live_csv_file)
             self._live_csv_writer.writerow([f'# Keithley 6430 Sub-Femtoamp SourceMeter'])
@@ -2622,6 +3437,8 @@ class Keithley6430App(QMainWindow):
             delay = self.timing_settings.delay.value()
             nplc = self.timing_settings.nplc.value()
             repeat = self.timing_settings.repeat.value()
+            auto_step = self.timing_settings.auto_delay_check.isChecked()
+            step_size = self.timing_settings.step_size.value()
 
             # Configure source
             if function == "Voltage":
@@ -2673,7 +3490,12 @@ class Keithley6430App(QMainWindow):
                         break
 
                     point_num += 1
-                    elapsed = time.time() - start_time
+
+                    if auto_step:
+                        target_offset = (point_num - 1) * step_size
+                        wait = target_offset - (time.time() - start_time)
+                        if wait > 0:
+                            time.sleep(wait)
 
                     # Set source
                     if function == "Voltage":
@@ -2681,13 +3503,15 @@ class Keithley6430App(QMainWindow):
                     else:
                         self.smu.set_current(source_val)
 
-                    time.sleep(delay)
+                    if not auto_step:
+                        time.sleep(delay)
+                        # Simulate NPLC measurement time
+                        if self.smu.simulate:
+                            nplc_time = nplc * 0.020
+                            overhead = 0.080  # RS-232 is slower than USB
+                            time.sleep(nplc_time + overhead)
 
-                    # Simulate NPLC measurement time
-                    if self.smu.simulate:
-                        nplc_time = nplc * 0.020
-                        overhead = 0.080  # RS-232 is slower than USB
-                        time.sleep(nplc_time + overhead)
+                    elapsed = time.time() - start_time
 
                     # Measure
                     voltage = None
@@ -2799,6 +3623,14 @@ class Keithley6430App(QMainWindow):
             self.smu.output_off()
         self.status.showMessage("Stopping...")
 
+    def _safe_experiment_token(self) -> str:
+        name = self._current_experiment_name or "Untitled"
+        # Strip filesystem-hostile chars
+        return "".join(c if c.isalnum() or c in "-_." else "_" for c in name)
+
+    def _experiment_save_dir(self) -> str:
+        return os.path.join(self.auto_save_path, self._safe_experiment_token())
+
     def _generate_filename(self) -> str:
         if self.run_start_datetime:
             date_str = self.run_start_datetime.strftime("%Y-%m-%d")
@@ -2806,13 +3638,17 @@ class Keithley6430App(QMainWindow):
         else:
             date_str = datetime.now().strftime("%Y-%m-%d")
             time_str = datetime.now().strftime("%H-%M-%S")
-        return f"K6430_Run{self.run_number}_{date_str}_{time_str}.csv"
+        token = self._safe_experiment_token()
+        if self._current_experiment_name:
+            return f"{token}_{date_str}_{time_str}.csv"
+        return f"Run{self.run_number}_{date_str}_{time_str}.csv"
 
     def _auto_save_csv(self):
         try:
-            os.makedirs(self.auto_save_path, exist_ok=True)
+            save_dir = self._experiment_save_dir()
+            os.makedirs(save_dir, exist_ok=True)
             filename = self._generate_filename()
-            filepath = os.path.join(self.auto_save_path, filename)
+            filepath = os.path.join(save_dir, filename)
             self._write_csv(filepath)
             self.status.showMessage(f"Auto-saved: {filename}")
         except Exception as e:
@@ -2858,242 +3694,297 @@ class Keithley6430App(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Export Error", str(e))
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_responsive_layout()
+
+    def _apply_responsive_layout(self):
+        w = self.width()
+        h = self.height()
+
+        # Font scaling: shrinks when window is small, never grows above original sizes.
+        # 1.00 at >= 1300x900, down to 0.65 at very small windows.
+        ratio = min(w / 1300.0, h / 900.0)
+        scale = max(0.65, min(1.00, ratio))
+        # Round to nearest 0.05 to avoid thrashing the stylesheet on tiny moves
+        scale = round(scale * 20) / 20
+        if abs(scale - getattr(self, "_current_ui_scale", -1)) >= 0.025:
+            self._current_ui_scale = scale
+            app = QApplication.instance()
+            if app is not None:
+                app.setStyleSheet(build_global_stylesheet(scale))
+                f = QFont("Inter", max(9, round(15 * scale)))
+                app.setFont(f)
+
     def closeEvent(self, event):
         self.multimeter_panel.stop_live()
         if self.smu:
+            try:
+                self.smu.output_off()
+            except:
+                pass
             self.smu.disconnect()
         event.accept()
 
 
-# Global stylesheet for dark theme
-GLOBAL_STYLESHEET = """
-        QMainWindow, QWidget {
-            background-color: #1a1a2e;
-            color: #e5e7eb;
-        }
-        QLabel {
-            color: #e5e7eb;
-        }
-        QPushButton {
-            font-size: 14px;
-            color: #e5e7eb;
-            background-color: #1a1a2e;
-            border: 1px solid #2a2a3e;
-            padding: 6px 14px;
-            border-radius: 5px;
-            font-weight: 500;
-        }
-        QPushButton:hover {
-            background-color: #252536;
-            border-color: #9ca3af;
-        }
-        QPushButton:disabled {
-            background-color: #374151;
-            color: #4b5563;
-            border-color: #374151;
-        }
-        QCheckBox, QRadioButton {
-            font-size: 14px;
-            color: #e5e7eb;
-            font-weight: 500;
-        }
-        QGroupBox {
-            font-size: 14px;
-            font-weight: bold;
-            color: #e5e7eb;
-            border: 1px solid #2a2a3e;
-            border-radius: 8px;
-            margin-top: 16px;
-            padding: 16px;
-            padding-top: 14px;
-            background-color: transparent;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 12px;
-            padding: 0 8px;
-            color: #e5e7eb;
-            background-color: #1a1a2e;
-            font-size: 14px;
-            font-weight: bold;
-        }
-        QTableWidget, QListWidget {
-            font-size: 13px;
-            color: #e5e7eb;
-            background-color: #202030;
-            border: 1px solid #374151;
-        }
-        QTableWidget::item, QListWidget::item {
-            color: #e5e7eb;
-        }
-        QHeaderView::section {
-            background-color: #252536;
-            color: #e5e7eb;
-            font-weight: bold;
-            padding: 8px;
-            border: 1px solid #374151;
-        }
-        QToolTip {
-            font-size: 13px;
-            background-color: #252536;
-            color: #ffffff;
-            border: 1px solid #374151;
-            padding: 6px;
-        }
-        QMenuBar {
-            font-size: 14px;
-            background-color: #1a1a2e;
-            color: #e5e7eb;
-            border-bottom: 1px solid #374151;
-        }
-        QMenuBar::item { color: #e5e7eb; }
-        QMenuBar::item:selected { background-color: #374151; }
-        QMenu {
-            font-size: 14px;
-            background-color: #1e1e30;
-            color: #e5e7eb;
-            border: 1px solid #374151;
-        }
-        QMenu::item {
-            color: #e5e7eb;
-            padding: 6px 20px;
-        }
-        QMenu::item:selected {
-            background-color: #374151;
-            color: #ffffff;
-        }
-        QTabWidget::pane {
-            border: 1px solid #2a2a3e;
-            background-color: #1a1a2e;
-            border-top: none;
-        }
-        QTabBar::tab {
-            font-size: 14px;
-            padding: 10px 24px;
-            background-color: #202030;
-            color: #9ca3af;
-            border: 1px solid #2a2a3e;
-            border-bottom: none;
-            margin-right: 2px;
-            font-weight: 500;
-        }
-        QTabBar::tab:selected {
-            background-color: #1a1a2e;
-            color: #e5e7eb;
-            font-weight: bold;
-            border-bottom: 2px solid #e5e7eb;
-            border-color: #2a2a3e;
-        }
-        QTabBar::tab:hover {
-            background-color: #252536;
-            color: #e5e7eb;
-        }
-        QComboBox {
-            font-size: 14px;
-            color: #e5e7eb;
-            background-color: #202030;
-            border: 1px solid #374151;
-            padding: 6px 10px;
-            border-radius: 5px;
-        }
-        QComboBox:hover { border-color: #9ca3af; }
-        QComboBox QAbstractItemView {
-            background-color: #202030;
-            color: #e5e7eb;
-            selection-background-color: #374151;
-            selection-color: #ffffff;
-        }
-        QComboBox::drop-down {
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 25px;
-            border-left: 1px solid #374151;
-            border-top-right-radius: 4px;
-            border-bottom-right-radius: 4px;
-            background-color: #202030;
-        }
-        QComboBox::drop-down:hover { background-color: #252536; }
-        QComboBox::down-arrow {
-            width: 12px;
-            height: 12px;
-            border: none;
-            border-left: 3px solid transparent;
-            border-right: 3px solid transparent;
-            border-top: 5px solid #e5e7eb;
-            margin-top: 2px;
-        }
-        QSpinBox, QDoubleSpinBox {
-            font-size: 14px;
-            color: #e5e7eb;
-            background-color: #202030;
-            border: 1px solid #374151;
-            padding: 6px 8px;
-            padding-right: 24px;
-            border-radius: 5px;
-            min-width: 60px;
-        }
-        QSpinBox:hover, QDoubleSpinBox:hover { border-color: #9ca3af; }
-        QSpinBox::up-button, QDoubleSpinBox::up-button {
-            subcontrol-origin: border;
-            subcontrol-position: top right;
-            width: 22px;
-            border-left: 1px solid #374151;
-            border-bottom: 1px solid #374151;
-            border-top-right-radius: 4px;
-            background-color: #202030;
-        }
-        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover { background-color: #252536; }
-        QSpinBox::down-button, QDoubleSpinBox::down-button {
-            subcontrol-origin: border;
-            subcontrol-position: bottom right;
-            width: 22px;
-            border-left: 1px solid #374151;
-            border-bottom-right-radius: 4px;
-            background-color: #202030;
-        }
-        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background-color: #252536; }
-        QScrollBar:vertical {
-            background-color: #1e1e30;
-            width: 12px;
-            border-radius: 6px;
-        }
-        QScrollBar::handle:vertical {
-            background-color: #374151;
-            border-radius: 6px;
-            min-height: 30px;
-        }
-        QScrollBar::handle:vertical:hover { background-color: #4b5563; }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-        QScrollBar:horizontal {
-            background-color: #1e1e30;
-            height: 12px;
-            border-radius: 6px;
-        }
-        QScrollBar::handle:horizontal {
-            background-color: #374151;
-            border-radius: 6px;
-            min-width: 30px;
-        }
-        QScrollBar::handle:horizontal:hover { background-color: #4b5563; }
-        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
-        QStatusBar {
-            background-color: #1a1a2e;
-            color: #9ca3af;
-            border-top: 1px solid #374151;
-        }
-        QProgressBar {
-            border: 1px solid #374151;
-            border-radius: 4px;
-            background-color: #252536;
-            text-align: center;
-            color: #e5e7eb;
-            font-weight: bold;
-        }
-        QProgressBar::chunk {
-            background-color: #e5e7eb;
-            border-radius: 3px;
-        }
+# Global stylesheet for light theme — scaled via build_global_stylesheet()
+_GLOBAL_STYLESHEET_TEMPLATE = """
+    QMainWindow, QWidget {
+        background-color: #ffffff;
+        color: #1a1a2e;
+    }
+    QLabel {
+        color: #1a1a2e;
+        font-size: __FONT_14__;
+    }
+    QPushButton {
+        font-size: __FONT_14__;
+        color: #1a1a2e;
+        background-color: #f3f4f6;
+        border: 1px solid #d1d5db;
+        padding: 6px 14px;
+        border-radius: 5px;
+        font-weight: 500;
+    }
+    QPushButton:hover {
+        background-color: #e5e7eb;
+        border-color: #9ca3af;
+    }
+    QPushButton:disabled {
+        background-color: #f3f4f6;
+        color: #9ca3af;
+        border-color: #e5e7eb;
+    }
+    QCheckBox, QRadioButton {
+        font-size: __FONT_14__;
+        color: #1a1a2e;
+        font-weight: 500;
+    }
+    QCheckBox:disabled, QRadioButton:disabled {
+        color: #9ca3af;
+    }
+    QGroupBox {
+        font-size: __FONT_14__;
+        font-weight: bold;
+        color: #1a1a2e;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        margin-top: 16px;
+        padding: 16px;
+        padding-top: 14px;
+        background-color: transparent;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        left: 12px;
+        padding: 0 8px;
+        color: #1a1a2e;
+        background-color: #ffffff;
+        font-size: __FONT_14__;
+        font-weight: bold;
+    }
+    QTableWidget, QListWidget {
+        font-size: __FONT_13__;
+        color: #1a1a2e;
+        background-color: #ffffff;
+        border: 1px solid #d1d5db;
+        alternate-background-color: #f9fafb;
+    }
+    QTableWidget::item, QListWidget::item {
+        color: #1a1a2e;
+    }
+    QTableWidget::item:selected, QListWidget::item:selected {
+        background-color: #dbeafe;
+        color: #1a1a2e;
+    }
+    QHeaderView::section {
+        background-color: #f3f4f6;
+        color: #1a1a2e;
+        font-weight: bold;
+        font-size: __FONT_13__;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+    }
+    QToolTip {
+        font-size: __FONT_13__;
+        background-color: #1a1a2e;
+        color: #ffffff;
+        border: 1px solid #1a1a2e;
+        padding: 6px;
+    }
+    QMenuBar {
+        font-size: __FONT_14__;
+        background-color: #f3f4f6;
+        color: #1a1a2e;
+        border-bottom: 1px solid #d1d5db;
+    }
+    QMenuBar::item {
+        color: #1a1a2e;
+    }
+    QMenuBar::item:selected {
+        background-color: #e5e7eb;
+    }
+    QMenu {
+        font-size: __FONT_14__;
+        background-color: #ffffff;
+        color: #1a1a2e;
+        border: 1px solid #d1d5db;
+    }
+    QMenu::item {
+        color: #1a1a2e;
+        padding: 6px 20px;
+    }
+    QMenu::item:selected {
+        background-color: #dbeafe;
+        color: #1a1a2e;
+    }
+    QTabWidget::pane {
+        border: 1px solid #d1d5db;
+        background-color: #ffffff;
+        border-top: none;
+    }
+    QTabBar::tab {
+        font-size: __FONT_14__;
+        padding: 10px 24px;
+        background-color: #f3f4f6;
+        color: #6b7280;
+        border: 1px solid #d1d5db;
+        border-bottom: none;
+        margin-right: 2px;
+        font-weight: 500;
+    }
+    QTabBar::tab:selected {
+        background-color: #ffffff;
+        color: #1a1a2e;
+        font-weight: bold;
+        border-bottom: 2px solid #1a1a2e;
+        border-color: #d1d5db;
+    }
+    QTabBar::tab:hover {
+        background-color: #e5e7eb;
+        color: #1a1a2e;
+    }
+    QComboBox {
+        font-size: __FONT_14__;
+        color: #1a1a2e;
+        background-color: #ffffff;
+        border: 1px solid #d1d5db;
+        padding: 6px 10px;
+        border-radius: 5px;
+    }
+    QComboBox:hover {
+        border-color: #6b7280;
+    }
+    QComboBox:disabled {
+        background-color: #f3f4f6;
+        color: #9ca3af;
+    }
+    QComboBox QAbstractItemView {
+        background-color: #ffffff;
+        color: #1a1a2e;
+        selection-background-color: #dbeafe;
+        selection-color: #1a1a2e;
+    }
+    QSpinBox, QDoubleSpinBox {
+        font-size: __FONT_14__;
+        color: #1a1a2e;
+        background-color: #ffffff;
+        border: 1px solid #d1d5db;
+        padding: 4px 6px;
+        padding-right: 22px;
+        border-radius: 5px;
+    }
+    QSpinBox:hover, QDoubleSpinBox:hover {
+        border-color: #6b7280;
+    }
+    QSpinBox:disabled, QDoubleSpinBox:disabled {
+        background-color: #f3f4f6;
+        color: #9ca3af;
+    }
+    /* Spinbox up/down buttons: only style the area, let Fusion paint the arrows */
+    QSpinBox::up-button, QDoubleSpinBox::up-button,
+    QSpinBox::down-button, QDoubleSpinBox::down-button,
+    QComboBox::drop-down {
+        background-color: transparent;
+        border: none;
+    }
+    QTextEdit, QLineEdit {
+        font-size: __FONT_13__;
+        color: #1a1a2e;
+        background-color: #ffffff;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        padding: 4px 6px;
+    }
+    QScrollBar:vertical {
+        background-color: #f3f4f6;
+        width: 12px;
+        border-radius: 6px;
+    }
+    QScrollBar::handle:vertical {
+        background-color: #d1d5db;
+        border-radius: 6px;
+        min-height: 30px;
+    }
+    QScrollBar::handle:vertical:hover {
+        background-color: #9ca3af;
+    }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+        height: 0px;
+    }
+    QScrollBar:horizontal {
+        background-color: #f3f4f6;
+        height: 12px;
+        border-radius: 6px;
+    }
+    QScrollBar::handle:horizontal {
+        background-color: #d1d5db;
+        border-radius: 6px;
+        min-width: 30px;
+    }
+    QScrollBar::handle:horizontal:hover {
+        background-color: #9ca3af;
+    }
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+        width: 0px;
+    }
+    QStatusBar {
+        background-color: #f3f4f6;
+        color: #4b5563;
+        border-top: 1px solid #d1d5db;
+    }
+    QProgressBar {
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        background-color: #ffffff;
+        text-align: center;
+        color: #1a1a2e;
+        font-weight: bold;
+    }
+    QProgressBar::chunk {
+        background-color: #1a1a2e;
+        border-radius: 3px;
+    }
+    QSplitter::handle {
+        background-color: #e5e7eb;
+    }
+    QSplitter::handle:hover {
+        background-color: #d1d5db;
+    }
 """
+
+
+def build_global_stylesheet(scale: float = 1.0) -> str:
+    """Render the global stylesheet with all font sizes scaled by `scale`."""
+    def px(base: int) -> str:
+        return f"{max(8, round(base * scale))}px"
+    return (_GLOBAL_STYLESHEET_TEMPLATE
+            .replace("__FONT_14__", px(14))
+            .replace("__FONT_13__", px(13)))
+
+
+# Backwards-compat alias: existing callers (launcher) import GLOBAL_STYLESHEET.
+GLOBAL_STYLESHEET = build_global_stylesheet(1.0)
 
 
 def main():
@@ -3101,9 +3992,7 @@ def main():
     app.setPalette(LightPalette())
     app.setStyle('Fusion')
 
-    # Global stylesheet with dark mode greyscale theme
-    # NOTE: app.setFont() must come AFTER setStyleSheet() on macOS
-    app.setStyleSheet(GLOBAL_STYLESHEET)
+    app.setStyleSheet(build_global_stylesheet(1.0))
 
     # Set Inter font AFTER stylesheet — on macOS, setStyleSheet() resets app font
     app.setFont(QFont("Inter", 15))
