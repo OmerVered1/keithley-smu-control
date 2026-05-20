@@ -6,6 +6,9 @@ dist/
 build/
 *.exe
 *.spec
+!keithley_suite.spec
+installer_out/
+.DS_Store
 .env
 .venv/
 venv/

@@ -48,7 +48,7 @@ from keithley2450_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 __app_name__ = "K2450 Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"

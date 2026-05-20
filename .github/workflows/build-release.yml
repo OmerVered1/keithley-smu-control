@@ -21,26 +21,14 @@ jobs:
         run: |
           pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller
 
-      - name: Build macOS app
+      - name: Build macOS app from spec
         run: |
-          pyinstaller \
-            --name "Keithley SMU Control Suite" \
-            --windowed \
-            --noconfirm \
-            --hidden-import keithley2450_pyqt \
-            --hidden-import keithley2450_driver \
-            --hidden-import keithley6430_pyqt \
-            --hidden-import keithley6430_driver \
-            --hidden-import keithley2602b_pyqt \
-            --hidden-import keithley2602b_driver \
-            --hidden-import serial.tools.list_ports \
-            --hidden-import pyvisa.resources \
-            launcher.py
+          pyinstaller keithley_suite.spec --noconfirm
 
       - name: Zip macOS app
         run: |
           cd dist
-          zip -r "../Keithley-SMU-Control-Suite-macOS.zip" "Keithley SMU Control Suite.app"
+          zip -qr "../Keithley-SMU-Control-Suite-macOS.zip" "Keithley SMU Control Suite.app"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -60,33 +48,52 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller
+          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller pillow
 
-      - name: Build Windows exe
+      - name: Build Windows exe from spec
         run: |
-          pyinstaller `
-            --name "Keithley SMU Control Suite" `
-            --windowed `
-            --noconfirm `
-            --hidden-import keithley2450_pyqt `
-            --hidden-import keithley2450_driver `
-            --hidden-import keithley6430_pyqt `
-            --hidden-import keithley6430_driver `
-            --hidden-import keithley2602b_pyqt `
-            --hidden-import keithley2602b_driver `
-            --hidden-import serial.tools.list_ports `
-            --hidden-import pyvisa.resources `
-            launcher.py
+          pyinstaller keithley_suite.spec --noconfirm
 
-      - name: Zip Windows build
+      - name: Zip Windows folder build
         run: |
           Compress-Archive -Path "dist\Keithley SMU Control Suite" -DestinationPath "Keithley-SMU-Control-Suite-Windows.zip"
 
-      - name: Upload Windows artifact
+      - name: Resolve installer version from git tag
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Windows installer
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} windows_installer.iss
+
+      - name: Rename installer to canonical filename
+        shell: pwsh
+        run: |
+          $src = "installer_out\Keithley-SMU-Control-Suite-Setup-${{ steps.ver.outputs.version }}.exe"
+          $dst = "Keithley-SMU-Control-Suite-Windows-Setup.exe"
+          Copy-Item $src $dst
+
+      - name: Upload Windows zip artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
           path: Keithley-SMU-Control-Suite-Windows.zip
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: Keithley-SMU-Control-Suite-Windows-Setup.exe
 
   release:
     needs: [build-macos, build-windows]
@@ -100,12 +107,17 @@ jobs:
         with:
           name: macos-app
 
-      - name: Download Windows artifact
+      - name: Download Windows zip artifact
         uses: actions/download-artifact@v4
         with:
           name: windows-exe
 
-      - name: Create GitHub Release
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+
+      - name: Attach binaries to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: Keithley SMU Control Suite ${{ github.ref_name }}
@@ -115,16 +127,13 @@ jobs:
             Unified launcher for Keithley 2450, 6430, and 2602B SourceMeter instruments.
 
             ### Downloads
-            - **macOS**: `Keithley-SMU-Control-Suite-macOS.zip` — extract and run the .app
-            - **Windows**: `Keithley-SMU-Control-Suite-Windows.zip` — extract and run the .exe
+            - **macOS**: `Keithley-SMU-Control-Suite-macOS.zip` — extract and run the `.app`.
+              First launch may need: right-click → Open, or `xattr -dr com.apple.quarantine "Keithley SMU Control Suite.app"`.
+            - **Windows installer (recommended)**: `Keithley-SMU-Control-Suite-Windows-Setup.exe` — run, optionally create a desktop shortcut.
+            - **Windows portable**: `Keithley-SMU-Control-Suite-Windows.zip` — unzip and run the `.exe` directly, no install.
 
-            ### What's included
-            - Launcher with instrument selection
-            - Live Multimeter with recording
-            - I-V Sweep with configurable parameters
-            - Measurement range selection (Auto + manual)
-
-            Created by Omer Vered with Claude Code
+            Created by Omer Vered with Claude Code.
           files: |
             Keithley-SMU-Control-Suite-macOS.zip
             Keithley-SMU-Control-Suite-Windows.zip
+            Keithley-SMU-Control-Suite-Windows-Setup.exe

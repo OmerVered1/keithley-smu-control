@@ -15,11 +15,17 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QGridLayout
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QPalette, QColor
+from PyQt5.QtCore import Qt, QPropertyAnimation, QPoint, QEasingCurve
+from PyQt5.QtGui import QFont, QPalette, QColor, QPixmap
 
 
-__version__ = "2.0.2"
+def _asset_path(name: str) -> str:
+    """Locate a bundled asset both in source-tree and inside a PyInstaller .app."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, "assets", name)
+
+
+__version__ = "2.0.3"
 __app_name__ = "Keithley SMU Control Suite"
 __author__ = "Omer Vered"
 
@@ -142,13 +148,13 @@ class LauncherWindow(QMainWindow):
         # Title
         title = QLabel(__app_name__)
         title.setFont(QFont("Inter", 40, QFont.Bold))
-        title.setStyleSheet("color: #1a1a2e;")
+        title.setStyleSheet("color: #1a1a2e; background: transparent;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel("Select an instrument to launch its control application")
         subtitle.setFont(QFont("Inter", 18))
-        subtitle.setStyleSheet("color: #1a1a2e;")
+        subtitle.setStyleSheet("color: #1a1a2e; background: transparent;")
         subtitle.setAlignment(Qt.AlignCenter)
         layout.addWidget(subtitle)
 
@@ -193,9 +199,60 @@ class LauncherWindow(QMainWindow):
         # Footer
         footer = QLabel(f"v{__version__} Created by {__author__} with claude code")
         footer.setFont(QFont("Inter", 14))
-        footer.setStyleSheet("color: #1a1a2e;")
+        footer.setStyleSheet("color: #1a1a2e; background: transparent;")
         footer.setAlignment(Qt.AlignCenter)
         layout.addWidget(footer)
+
+        # Clawd mascot in the bottom-right corner.
+        # Lives behind everything else so any overlapping widget paints on top.
+        self._clawd = QLabel(central)
+        self._clawd_anim = None
+        self._clawd_base_y = 0
+        pixmap = QPixmap(_asset_path("clawd_happy.png"))
+        if not pixmap.isNull():
+            self._clawd.setPixmap(
+                pixmap.scaledToHeight(80, Qt.SmoothTransformation)
+            )
+            self._clawd.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self._clawd.setStyleSheet("background: transparent;")
+            self._clawd.adjustSize()
+            self._clawd.show()
+            self._clawd.lower()  # send to background z-order
+        else:
+            self._clawd.hide()
+        self._position_clawd()
+
+    def _position_clawd(self):
+        """Anchor clawd to the bottom-right corner of the central widget."""
+        if not hasattr(self, "_clawd") or self._clawd.pixmap() is None:
+            return
+        central = self.centralWidget()
+        if central is None:
+            return
+        margin = 16
+        x = central.width() - self._clawd.width() - margin
+        y = central.height() - self._clawd.height() - margin
+        self._clawd_base_y = max(0, y)
+        self._clawd.move(max(0, x), self._clawd_base_y)
+        self._start_clawd_bob(max(0, x), self._clawd_base_y)
+
+    def _start_clawd_bob(self, x: int, base_y: int):
+        """Idle floating animation — clawd drifts up and down a few pixels."""
+        if self._clawd_anim is not None:
+            self._clawd_anim.stop()
+        anim = QPropertyAnimation(self._clawd, b"pos", self)
+        anim.setDuration(2400)
+        anim.setStartValue(QPoint(x, base_y))
+        anim.setKeyValueAt(0.5, QPoint(x, base_y - 6))
+        anim.setEndValue(QPoint(x, base_y))
+        anim.setEasingCurve(QEasingCurve.InOutSine)
+        anim.setLoopCount(-1)
+        anim.start()
+        self._clawd_anim = anim
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_clawd()
 
     def _launch_instrument(self, instrument: str):
         """Launch an instrument control window"""
