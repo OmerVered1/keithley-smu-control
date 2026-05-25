@@ -50,7 +50,7 @@ from keithley6430_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.5"
+__version__ = "2.0.6"
 __app_name__ = "K6430 Control Suite"
 __app_subtitle__ = "Sub-Femtoamp Remote SourceMeter"
 __author__ = "Omer Vered"
@@ -541,6 +541,15 @@ class MultimeterPanel(QWidget):
                 self.app.smu.set_source_voltage(source_val, compliance_current=compliance)
             else:
                 self.app.smu.set_source_current(source_val, compliance_voltage=compliance)
+
+            # Apply sense mode so the multimeter's UI toggle actually takes effect.
+            # Otherwise the SMU keeps whatever mode the sweep (or a prior session)
+            # left it in, and 4-Wire wiring read as 2-Wire produces wildly wrong
+            # I/R readings.
+            if self.sense == "4-Wire":
+                self.app.smu.set_sense_mode(SenseMode.FOUR_WIRE)
+            else:
+                self.app.smu.set_sense_mode(SenseMode.TWO_WIRE)
 
             # Apply measurement ranges
             v_range = self.voltage_range.currentText()

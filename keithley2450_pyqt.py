@@ -48,7 +48,7 @@ from keithley2450_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.5"
+__version__ = "2.0.6"
 __app_name__ = "K2450 Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -556,6 +556,15 @@ class MultimeterPanel(QWidget):
                 self.app.smu.set_source_voltage(source_val, compliance_current=compliance)
             else:
                 self.app.smu.set_source_current(source_val, compliance_voltage=compliance)
+
+            # Apply sense mode so the multimeter's UI toggle actually takes effect.
+            # Otherwise the SMU keeps whatever mode the sweep (or a prior session)
+            # left it in, and 4-Wire wiring read as 2-Wire produces wildly wrong
+            # I/R readings. Set both V and I sense (the driver's set_sense_mode
+            # only touches one of them).
+            rsen = "ON" if self.sense == "4-Wire" else "OFF"
+            self.app.smu._write(f"SENS:CURR:RSEN {rsen}")
+            self.app.smu._write(f"SENS:VOLT:RSEN {rsen}")
 
             # Apply measurement ranges
             v_range = self.voltage_range.currentText()

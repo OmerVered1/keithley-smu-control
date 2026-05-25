@@ -49,7 +49,7 @@ from keithley2602b_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.5"
+__version__ = "2.0.6"
 __app_name__ = "K2602B Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -548,6 +548,15 @@ class MultimeterPanel(QWidget):
                 self.app.smu.set_source_voltage(source_val, compliance_current=compliance, channel=ch)
             else:
                 self.app.smu.set_source_current(source_val, compliance_voltage=compliance, channel=ch)
+
+            # Apply sense mode so the multimeter's UI toggle actually takes effect.
+            # Without this, the SMU keeps whatever sense mode the sweep (or a prior
+            # session) left it in, and 4-Wire wiring read as 2-Wire produces wildly
+            # wrong I/R readings.
+            if self.sense == "4-Wire":
+                self.app.smu.set_sense_mode(SenseMode.FOUR_WIRE, ch)
+            else:
+                self.app.smu.set_sense_mode(SenseMode.TWO_WIRE, ch)
 
             # Apply measurement ranges
             v_range = self.voltage_range.currentText()
