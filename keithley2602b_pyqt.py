@@ -49,7 +49,7 @@ from keithley2602b_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.6"
+__version__ = "2.0.7"
 __app_name__ = "K2602B Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -945,11 +945,20 @@ class TimingSettingsWidget(QGroupBox):
         if checked:
             self._recompute_auto_delay()
 
+    # Headroom subtracted from the auto-computed delay to account for
+    # the bus overhead of issuing measure_voltage() + measure_current()
+    # over USB-TSP plus general Python/Qt overhead. Without this, each
+    # sweep iteration overshoots step_size by ~30 ms and the absolute
+    # tick alignment can never catch up, so the run drifts seconds per
+    # thousand points.
+    _AUTO_DELAY_OVERHEAD_S = 0.050
+
     def _recompute_auto_delay(self):
         if not getattr(self, "auto_delay_check", None) or not self.auto_delay_check.isChecked():
             return
         window_s = self.nplc.value() * 20e-3
-        new_delay = max(0.0, self.step_size.value() - window_s)
+        new_delay = max(0.0,
+                        self.step_size.value() - window_s - self._AUTO_DELAY_OVERHEAD_S)
         if new_delay > self.delay.maximum():
             new_delay = self.delay.maximum()
         self.delay.blockSignals(True)

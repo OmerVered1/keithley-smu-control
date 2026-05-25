@@ -50,7 +50,7 @@ from keithley6430_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.6"
+__version__ = "2.0.7"
 __app_name__ = "K6430 Control Suite"
 __app_subtitle__ = "Sub-Femtoamp Remote SourceMeter"
 __author__ = "Omer Vered"
@@ -968,11 +968,18 @@ class TimingSettingsWidget(QGroupBox):
         if checked:
             self._recompute_auto_delay()
 
+    # Headroom subtracted from the auto-computed delay to account for the
+    # bus overhead of RS-232 measurement queries (slower than USB) plus
+    # general Python/Qt overhead. Without this, each iteration overshoots
+    # step_size and the absolute tick alignment can never catch up.
+    _AUTO_DELAY_OVERHEAD_S = 0.100  # 6430 RS-232 is slower than the USB devices
+
     def _recompute_auto_delay(self):
         if not getattr(self, "auto_delay_check", None) or not self.auto_delay_check.isChecked():
             return
         window_s = self.nplc.value() * 20e-3
-        new_delay = max(0.0, self.step_size.value() - window_s)
+        new_delay = max(0.0,
+                        self.step_size.value() - window_s - self._AUTO_DELAY_OVERHEAD_S)
         if new_delay > self.delay.maximum():
             new_delay = self.delay.maximum()
         self.delay.blockSignals(True)
