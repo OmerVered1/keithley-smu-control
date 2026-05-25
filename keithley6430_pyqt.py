@@ -50,7 +50,7 @@ from keithley6430_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 __app_name__ = "K6430 Control Suite"
 __app_subtitle__ = "Sub-Femtoamp Remote SourceMeter"
 __author__ = "Omer Vered"
@@ -3501,13 +3501,18 @@ class Keithley6430App(QMainWindow):
                     else:
                         self.smu.set_current(source_val)
 
-                    if not auto_step:
-                        time.sleep(delay)
-                        # Simulate NPLC measurement time
-                        if self.smu.simulate:
-                            nplc_time = nplc * 0.020
-                            overhead = 0.080  # RS-232 is slower than USB
-                            time.sleep(nplc_time + overhead)
+                    # Settle the SMU before measuring. Without this the DAC
+                    # and any range/auto-zero transients leak into V/I and
+                    # produce garbage values (incl. negative R at boundaries).
+                    time.sleep(delay)
+
+                    # Simulate NPLC integration time + bus overhead in sim
+                    # mode. In auto_step mode the tick alignment already
+                    # paces the loop, so we don't double-count it there.
+                    if not auto_step and self.smu.simulate:
+                        nplc_time = nplc * 0.020
+                        overhead = 0.080  # RS-232 is slower than USB
+                        time.sleep(nplc_time + overhead)
 
                     elapsed = time.time() - start_time
 

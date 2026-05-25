@@ -49,7 +49,7 @@ from keithley2602b_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 __app_name__ = "K2602B Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -3374,12 +3374,18 @@ class Keithley2602BApp(QMainWindow):
                     else:
                         self.smu.set_current(source_val, channel)
 
-                    if not auto_step:
-                        time.sleep(delay)
-                        if self.smu.simulate:
-                            nplc_time = nplc * 0.020
-                            overhead = 0.060
-                            time.sleep(nplc_time + overhead)
+                    # Settle the SMU before measuring. Without this the DAC
+                    # and any range/auto-zero transients leak into V/I and
+                    # produce garbage values (incl. negative R at boundaries).
+                    time.sleep(delay)
+
+                    # Simulate NPLC integration time + bus overhead in sim
+                    # mode. In auto_step mode the tick alignment already
+                    # paces the loop, so we don't double-count it there.
+                    if not auto_step and self.smu.simulate:
+                        nplc_time = nplc * 0.020
+                        overhead = 0.060
+                        time.sleep(nplc_time + overhead)
 
                     elapsed = time.time() - start_time
 
