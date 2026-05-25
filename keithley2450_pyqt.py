@@ -48,7 +48,7 @@ from keithley2450_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.4"
+__version__ = "2.0.5"
 __app_name__ = "K2450 Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -1888,6 +1888,15 @@ By using {__app_name__}, you acknowledge that you have read this Agreement,
 understand it, and agree to be bound by its terms and conditions."""
 
 
+_WAVE_UNIT_MULT = {
+    "sec": 1.0, "min": 60.0, "hour": 3600.0, "ms": 1e-3, "μs": 1e-6,
+    "Ω": 1.0, "kΩ": 1e3, "MΩ": 1e6, "GΩ": 1e9,
+    "W": 1.0, "mW": 1e-3, "µW": 1e-6,
+    "V": 1.0, "mV": 1e-3,
+    "A": 1.0, "mA": 1e-3, "µA": 1e-6, "nA": 1e-9,
+}
+
+
 class WaveToolDialog(QDialog):
     """Custom Signal Design Tool - Creates multi-segment waveforms for I-V sweeps"""
 
@@ -2229,15 +2238,7 @@ class WaveToolDialog(QDialog):
     # --- Waveform calculation ---
 
     def _get_unit_multiplier(self, unit: str) -> float:
-        """Get multiplier for unit conversion"""
-        units = {
-            "sec": 1.0, "min": 60.0, "hour": 3600.0, "ms": 1e-3, "μs": 1e-6,
-            "Ω": 1.0, "kΩ": 1e3,
-            "W": 1.0, "mW": 1e-3,
-            "V": 1.0, "mV": 1e-3,
-            "A": 1.0, "mA": 1e-3
-        }
-        return units.get(unit, 1.0)
+        return _WAVE_UNIT_MULT.get(unit, 1.0)
 
     def _calculate_segment_waveform(self, seg, R, mode, export_target):
         """Calculate waveform for a single segment"""
@@ -2392,6 +2393,7 @@ class WaveToolDialog(QDialog):
             "export_mode": self.export_mode.currentText(),
             "segments": [dict(s) for s in self.segments],
             "current_segment_index": self._current_segment_index,
+            "live_r_linked": self.live_r_check.isChecked(),
         }
 
     def load_state(self, state: dict):
@@ -2416,6 +2418,62 @@ class WaveToolDialog(QDialog):
                 self.segment_list.setCurrentRow(target_idx)
             else:
                 self.segment_list.setCurrentRow(0)
+        if state.get("live_r_linked"):
+            self.live_r_check.setChecked(True)
+
+    @staticmethod
+    def compute_values_from_config(config: dict, R_override: Optional[float] = None) -> List[float]:
+        """Recompute the full value list from a saved dump_state config."""
+        segments = config.get("segments", [])
+        if not segments:
+            return []
+        if R_override is not None:
+            R = float(R_override)
+        else:
+            R = (config.get("resistance", 10.0)
+                 * _WAVE_UNIT_MULT.get(config.get("res_unit", "Ω"), 1.0))
+        mode = config.get("design_mode", "Power (W)").split(" ")[0]
+        export_target = config.get("export_mode", "Voltage (V)").split(" ")[0]
+
+        out: List[float] = []
+        for seg in segments:
+            period_sec = seg["period"] * _WAVE_UNIT_MULT.get(seg["period_unit"], 1.0)
+            dt = seg["step_size"] * _WAVE_UNIT_MULT.get(seg["step_unit"], 1.0)
+            cycles = seg["cycles"]
+            avg = seg["avg_value"] * _WAVE_UNIT_MULT.get(seg["avg_unit"], 1.0)
+            max_val = seg["max_value"] * _WAVE_UNIT_MULT.get(seg["max_unit"], 1.0)
+            amplitude = max_val - avg
+            t = np.arange(0, cycles * period_sec, dt)
+            f = 1.0 / period_sec if period_sec > 0 else 0.0
+            wt = seg.get("wave_type", "Sine")
+            if wt == "Sine":
+                wave = avg + amplitude * np.sin(2 * np.pi * f * t)
+            elif wt == "Square":
+                wave = avg + amplitude * np.sign(np.sin(2 * np.pi * f * t))
+            elif wt == "Triangle":
+                wave = avg + amplitude * (2 * np.abs(2 * (t * f - np.floor(t * f + 0.5))) - 1)
+            elif wt == "Sawtooth":
+                wave = avg + amplitude * (2 * (t * f - np.floor(t * f + 0.5)))
+            elif wt == "Square-Sine":
+                phase = (t * f) % 1.0
+                wave = np.where(phase < 0.5, avg + amplitude,
+                                avg + amplitude * np.cos(np.pi * (phase - 0.5) / 0.5))
+            elif wt == "Sine-Square":
+                phase = (t * f) % 1.0
+                wave = np.where(phase < 0.5, avg - amplitude * np.cos(np.pi * phase / 0.5),
+                                avg + amplitude)
+            else:
+                wave = np.full_like(t, avg)
+            if mode == "Power":
+                final = np.sqrt(np.maximum(wave * R, 0)) if export_target == "Voltage" else np.sqrt(np.maximum(wave / R, 0))
+            elif mode == "Voltage":
+                final = wave if export_target == "Voltage" else wave / R
+            elif mode == "Current":
+                final = wave * R if export_target == "Voltage" else wave
+            else:
+                final = wave
+            out.extend(final.tolist())
+        return out
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -2559,7 +2617,12 @@ class Keithley2450App(QMainWindow):
         
         # Help menu
         help_menu = menubar.addMenu("Help")
-        
+
+        update_action = QAction("Check for Updates…", self)
+        update_action.triggered.connect(self._check_for_updates)
+        help_menu.addAction(update_action)
+        help_menu.addSeparator()
+
         about_action = QAction("About", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
@@ -3145,6 +3208,10 @@ class Keithley2450App(QMainWindow):
         
         return False
     
+    def _check_for_updates(self):
+        from updater import check_for_updates
+        check_for_updates(__version__, self)
+
     def _show_about(self):
         about_text = f"""
         <h2>{__app_name__}</h2>
@@ -3337,6 +3404,31 @@ class Keithley2450App(QMainWindow):
         mode = self.source_settings.mode.currentText()
         
         if mode == "List Sweep":
+            # If the list came from a Custom Signal Design with Live R linked,
+            # re-derive the values now using the current resistance.
+            if (self._current_wave_config
+                    and self._current_wave_config.get("live_r_linked")):
+                r = self._get_live_resistance()
+                if r is not None and 1e-6 < abs(r) < 1e12:
+                    new_values = WaveToolDialog.compute_values_from_config(
+                        self._current_wave_config, r
+                    )
+                    if new_values:
+                        self.sweep_list.sweep_values = new_values
+                        self.sweep_list._update_table()
+                        self.status.showMessage(
+                            f"Wave list re-derived with live R = {r:.2f} Ω"
+                        )
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Live R unavailable",
+                        "Live R was linked to the Custom Signal Design but no "
+                        "valid R reading is available right now.\n\n"
+                        "Turn the SMU output ON, or run the Multimeter tab, "
+                        "and start the sweep again. Falling back to the "
+                        "values already in the sweep list for this run."
+                    )
             sweep_values = self.sweep_list.get_values()
             if not sweep_values:
                 QMessageBox.warning(self, "No Values", "No sweep values defined. Generate or import a list.")

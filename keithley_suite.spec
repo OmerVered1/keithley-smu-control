@@ -33,6 +33,7 @@ a = Analysis(
         'keithley6430_driver',
         'keithley2602b_pyqt',
         'keithley2602b_driver',
+        'updater',
         'PyQt5',
         'PyQt5.QtWidgets',
         'PyQt5.QtCore',
@@ -91,6 +92,6 @@ if sys.platform == 'darwin':
         bundle_identifier='com.omervered.keithley-smu-control',
         info_plist={
             'NSHighResolutionCapable': True,
-            'CFBundleShortVersionString': '2.0.4',  # bump per release
+            'CFBundleShortVersionString': '2.0.5',  # bump per release
         },
     )

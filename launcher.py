@@ -25,7 +25,7 @@ def _asset_path(name: str) -> str:
     return os.path.join(base, "assets", name)
 
 
-__version__ = "2.0.4"
+__version__ = "2.0.5"
 __app_name__ = "Keithley SMU Control Suite"
 __author__ = "Omer Vered"
 
