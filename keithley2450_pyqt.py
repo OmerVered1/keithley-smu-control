@@ -48,7 +48,7 @@ from keithley2450_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.8"
+__version__ = "2.0.9"
 __app_name__ = "K2450 Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -3170,6 +3170,10 @@ class Keithley2450App(QMainWindow):
         self.y2_axis.setCurrentText(y2)
     
     def _update_graph_axes(self):
+        # _on_axis_variable_changed runs during _setup_ui (to populate the
+        # initial unit combos), before self.graph has been created.
+        if not hasattr(self, "graph"):
+            return
         self.graph.set_axes(
             self.x_axis.currentText(),
             self.y1_axis.currentText(),
