@@ -49,7 +49,7 @@ from keithley2602b_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.7"
+__version__ = "2.0.8"
 __app_name__ = "K2602B Control Suite"
 __author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
@@ -689,9 +689,9 @@ class MultimeterPanel(QWidget):
             try:
                 with open(file, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow(["Time(s)", "Voltage(V)", "Current(A)", "Resistance(\u03a9)", "Power(W)"])
-                    for row in self.recorded_data:
-                        writer.writerow(row)
+                    writer.writerow(["Time(s)", "Voltage(V)", "Current(A)", "Resistance(\u03a9)", "Power(mW)"])
+                    for t, v, i, r, p in self.recorded_data:
+                        writer.writerow([t, v, i, r, p * 1000.0])
                 QMessageBox.information(self, "Success", f"Saved {len(self.recorded_data)} points to CSV")
             except Exception as e:
                 QMessageBox.critical(self, "Error", str(e))
@@ -1371,6 +1371,28 @@ class SweepListWidget(QGroupBox):
         return self.sweep_values
 
 
+# Display-unit options per axis variable. Maps unit name -> factor to
+# multiply by when converting from base SI (V/A/Ω/W/s) to the chosen
+# display unit. Used by the I-V Sweep graph axis-unit dropdowns; table
+# and CSV remain in fixed units (Power in mW, everything else in base).
+GRAPH_AXIS_UNITS = {
+    "Voltage":    [("V", 1.0), ("mV", 1e3)],
+    "Current":    [("A", 1.0), ("mA", 1e3), ("µA", 1e6), ("nA", 1e9)],
+    "Resistance": [("Ω", 1.0), ("kΩ", 1e-3), ("MΩ", 1e-6)],
+    "Power":      [("mW", 1e3), ("W", 1.0), ("µW", 1e6)],
+    "Time":       [("s", 1.0), ("min", 1.0/60.0), ("hour", 1.0/3600.0), ("ms", 1e3)],
+    "Index":      [("", 1.0)],
+    "None":       [("", 1.0)],
+}
+
+
+def _axis_unit_factor(variable: str, unit: str) -> float:
+    for u, f in GRAPH_AXIS_UNITS.get(variable, [("", 1.0)]):
+        if u == unit:
+            return f
+    return 1.0
+
+
 class DualAxisGraph(pg.PlotWidget):
     """Graph widget with dual Y-axis support"""
 
@@ -1407,6 +1429,9 @@ class DualAxisGraph(pg.PlotWidget):
         self.x_axis = "Voltage"
         self.y1_axis = "Current"
         self.y2_axis = "None"
+        self.x_unit = "V"
+        self.y1_unit = "A"
+        self.y2_unit = ""
 
         self.addLegend()
 
@@ -1414,14 +1439,14 @@ class DualAxisGraph(pg.PlotWidget):
         self.view_box2.setGeometry(self.plotItem.vb.sceneBoundingRect())
         self.view_box2.linkedViewChanged(self.plotItem.vb, self.view_box2.XAxis)
 
-    def set_axes(self, x: str, y1: str, y2: str):
+    def set_axes(self, x: str, y1: str, y2: str,
+                 x_unit: str = "", y1_unit: str = "", y2_unit: str = ""):
         self.x_axis = x
         self.y1_axis = y1
         self.y2_axis = y2
-
-        x_unit = {"Voltage": "V", "Current": "A", "Time": "s", "Index": ""}.get(x, "")
-        y1_unit = {"Voltage": "V", "Current": "A", "Resistance": "\u03a9", "Power": "W"}.get(y1, "")
-        y2_unit = {"Voltage": "V", "Current": "A", "Resistance": "\u03a9", "Power": "W"}.get(y2, "")
+        self.x_unit = x_unit
+        self.y1_unit = y1_unit
+        self.y2_unit = y2_unit
 
         self.setLabel('bottom', x, units=x_unit)
         if y1 != "None":
@@ -1444,7 +1469,7 @@ class DualAxisGraph(pg.PlotWidget):
         self.curve1.setData([], [])
         self.curve2.setData([], [])
 
-    def _get_data(self, axis: str) -> List[float]:
+    def _get_data(self, axis: str, unit: str = "") -> List[float]:
         data = []
         for p in self.data_points:
             if axis == "Index":
@@ -1462,17 +1487,20 @@ class DualAxisGraph(pg.PlotWidget):
                     data.append(float('nan'))
             elif axis == "Power":
                 data.append(p.power if p.power is not None else 0)
+        factor = _axis_unit_factor(axis, unit)
+        if factor != 1.0:
+            data = [v * factor for v in data]
         return data
 
     def _update_plot(self):
         if not self.data_points:
             return
-        x_data = self._get_data(self.x_axis)
+        x_data = self._get_data(self.x_axis, self.x_unit)
         if self.y1_axis != "None":
-            y1_data = self._get_data(self.y1_axis)
+            y1_data = self._get_data(self.y1_axis, self.y1_unit)
             self.curve1.setData(x_data, y1_data)
         if self.y2_axis != "None":
-            y2_data = self._get_data(self.y2_axis)
+            y2_data = self._get_data(self.y2_axis, self.y2_unit)
             self.curve2.setData(x_data, y2_data)
 
     def update_live(self):
@@ -1488,7 +1516,7 @@ class DataTableWidget(QTableWidget):
         super().__init__(parent)
 
         self.setColumnCount(8)
-        self.setHorizontalHeaderLabels(['#', 'Channel', 'Computer Time', 'Elapsed (s)', 'Voltage (V)', 'Current (A)', 'Resistance (\u03a9)', 'Power (W)'])
+        self.setHorizontalHeaderLabels(['#', 'Channel', 'Computer Time', 'Elapsed (s)', 'Voltage (V)', 'Current (A)', 'Resistance (\u03a9)', 'Power (mW)'])
 
         header = self.horizontalHeader()
         for i in range(8):
@@ -1525,7 +1553,7 @@ class DataTableWidget(QTableWidget):
         self.setItem(row, 4, QTableWidgetItem(f"{point.voltage:.9e}" if point.voltage else ""))
         self.setItem(row, 5, QTableWidgetItem(f"{point.current:.9e}" if point.current else ""))
         self.setItem(row, 6, QTableWidgetItem(f"{point.resistance:.4e}" if point.resistance and abs(point.resistance) < 1e12 else ""))
-        self.setItem(row, 7, QTableWidgetItem(f"{point.power:.6e}" if point.power else ""))
+        self.setItem(row, 7, QTableWidgetItem(f"{point.power*1000:.6e}" if point.power else ""))
 
         self.scrollToBottom()
 
@@ -2807,20 +2835,33 @@ class Keithley2602BApp(QMainWindow):
         axis_layout.addWidget(QLabel("X:"))
         self.x_axis = QComboBox()
         self.x_axis.addItems(["Voltage", "Current", "Time", "Index"])
-        self.x_axis.currentTextChanged.connect(self._update_graph_axes)
         axis_layout.addWidget(self.x_axis)
+        self.x_unit = QComboBox()
+        axis_layout.addWidget(self.x_unit)
+        self.x_axis.currentTextChanged.connect(lambda _: self._on_axis_variable_changed("x"))
+        self.x_unit.currentTextChanged.connect(self._update_graph_axes)
 
         axis_layout.addWidget(QLabel("Y1 (Left):"))
         self.y1_axis = QComboBox()
         self.y1_axis.addItems(["Current", "Voltage", "Resistance", "Power", "None"])
-        self.y1_axis.currentTextChanged.connect(self._update_graph_axes)
         axis_layout.addWidget(self.y1_axis)
+        self.y1_unit = QComboBox()
+        axis_layout.addWidget(self.y1_unit)
+        self.y1_axis.currentTextChanged.connect(lambda _: self._on_axis_variable_changed("y1"))
+        self.y1_unit.currentTextChanged.connect(self._update_graph_axes)
 
         axis_layout.addWidget(QLabel("Y2 (Right):"))
         self.y2_axis = QComboBox()
         self.y2_axis.addItems(["None", "Voltage", "Current", "Resistance", "Power"])
-        self.y2_axis.currentTextChanged.connect(self._update_graph_axes)
         axis_layout.addWidget(self.y2_axis)
+        self.y2_unit = QComboBox()
+        axis_layout.addWidget(self.y2_unit)
+        self.y2_axis.currentTextChanged.connect(lambda _: self._on_axis_variable_changed("y2"))
+        self.y2_unit.currentTextChanged.connect(self._update_graph_axes)
+
+        # Populate unit combos for the initial variable selections
+        for which in ("x", "y1", "y2"):
+            self._on_axis_variable_changed(which)
 
         axis_layout.addWidget(QLabel("Presets:"))
         for preset, (x, y1, y2) in [("I-V", ("Voltage", "Current", "None")),
@@ -3119,8 +3160,28 @@ class Keithley2602BApp(QMainWindow):
         self.graph.set_axes(
             self.x_axis.currentText(),
             self.y1_axis.currentText(),
-            self.y2_axis.currentText()
+            self.y2_axis.currentText(),
+            x_unit=self.x_unit.currentText(),
+            y1_unit=self.y1_unit.currentText(),
+            y2_unit=self.y2_unit.currentText(),
         )
+
+    def _on_axis_variable_changed(self, which: str):
+        """Repopulate the unit combo for the given axis whenever its
+        variable selection changes (e.g., picking 'Power' shows mW/W/µW)."""
+        var_combo, unit_combo = {
+            "x": (self.x_axis, self.x_unit),
+            "y1": (self.y1_axis, self.y1_unit),
+            "y2": (self.y2_axis, self.y2_unit),
+        }[which]
+        variable = var_combo.currentText()
+        options = GRAPH_AXIS_UNITS.get(variable, [("", 1.0)])
+        unit_combo.blockSignals(True)
+        unit_combo.clear()
+        unit_combo.addItems([u for u, _ in options])
+        unit_combo.setEnabled(len(options) > 1)
+        unit_combo.blockSignals(False)
+        self._update_graph_axes()
 
     def _show_connection_dialog(self):
         dialog = ConnectionDialog(self)
@@ -3439,7 +3500,7 @@ class Keithley2602BApp(QMainWindow):
             self._live_csv_writer = csv.writer(self._live_csv_file)
             for row in self._build_csv_metadata_rows(sweep_values):
                 self._live_csv_writer.writerow(row)
-            self._live_csv_writer.writerow(['Index', 'Channel', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(W)'])
+            self._live_csv_writer.writerow(['Index', 'Channel', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(mW)'])
             self._live_csv_file.flush()
             self.status.showMessage(f"Saving to: {filename}")
         except Exception as e:
@@ -3527,17 +3588,28 @@ class Keithley2602BApp(QMainWindow):
                     resistance = None
                     power = None
 
-                    if self.measure_settings.measure_v.isChecked():
-                        voltage = self.smu.measure_voltage(channel)
+                    # Use the SMU's atomic smua.measure.iv() so V and I come
+                    # from a single bus round-trip. Two separate measure
+                    # queries occasionally race on the TSP bus and the V
+                    # response is re-attributed to the I read, producing
+                    # V == I exactly (and bogus R = 1, P = V^2).
+                    want_v = self.measure_settings.measure_v.isChecked()
+                    want_i = self.measure_settings.measure_i.isChecked()
+                    if want_v or want_i:
+                        try:
+                            result = self.smu.measure_all(channel)
+                            if want_v:
+                                voltage = result.voltage
+                            if want_i:
+                                current = result.current
+                        except Exception as e:
+                            print(f"Measurement error: {e}")
 
-                    if self.measure_settings.measure_i.isChecked():
-                        current = self.smu.measure_current(channel)
-
-                    if self.measure_settings.measure_r.isChecked() and voltage and current:
+                    if self.measure_settings.measure_r.isChecked() and voltage is not None and current is not None:
                         if abs(current) > 1e-12:
                             resistance = voltage / current
 
-                    if self.measure_settings.measure_p.isChecked() and voltage and current:
+                    if self.measure_settings.measure_p.isChecked() and voltage is not None and current is not None:
                         power = abs(voltage * current)
 
                     computer_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -3611,7 +3683,7 @@ class Keithley2602BApp(QMainWindow):
                     f"{point.voltage:.9e}" if point.voltage else "",
                     f"{point.current:.9e}" if point.current else "",
                     f"{point.resistance:.9e}" if point.resistance else "",
-                    f"{point.power:.9e}" if point.power else ""
+                    f"{point.power*1000:.9e}" if point.power else ""
                 ])
                 self._live_csv_file.flush()
             except Exception as e:
@@ -3731,7 +3803,7 @@ class Keithley2602BApp(QMainWindow):
             sweep_values = [p.source_value for p in self.measurement_data] if self.measurement_data else None
             for row in self._build_csv_metadata_rows(sweep_values):
                 writer.writerow(row)
-            writer.writerow(['Index', 'Channel', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(W)'])
+            writer.writerow(['Index', 'Channel', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(mW)'])
             for p in self.measurement_data:
                 writer.writerow([
                     p.index,
@@ -3741,7 +3813,7 @@ class Keithley2602BApp(QMainWindow):
                     f"{p.voltage:.9e}" if p.voltage else "",
                     f"{p.current:.9e}" if p.current else "",
                     f"{p.resistance:.9e}" if p.resistance else "",
-                    f"{p.power:.9e}" if p.power else ""
+                    f"{p.power*1000:.9e}" if p.power else ""
                 ])
 
     def export_csv(self):
