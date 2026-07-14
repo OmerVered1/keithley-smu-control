@@ -20,6 +20,7 @@ import time
 import threading
 import csv
 import json
+import copy
 import numpy as np
 from typing import Optional, List, Dict
 from dataclasses import dataclass
@@ -50,7 +51,7 @@ from keithley6430_driver import (
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.0.9"
+__version__ = "2.1.0"
 __app_name__ = "K6430 Control Suite"
 __app_subtitle__ = "Sub-Femtoamp Remote SourceMeter"
 __author__ = "Omer Vered"
@@ -3146,13 +3147,20 @@ class Keithley6430App(QMainWindow):
         self._save_experiment(name)
 
     def _clone_experiment(self, source: str, new_name: str):
-        record = self.experiment_store.get(source)
-        if record is None:
-            # Source isn't saved on disk — clone the current UI state instead
+        # If the source is the currently-loaded experiment, snapshot the LIVE
+        # UI — that way any unsaved edits (sweep list, settings, wave config)
+        # carry over to the clone. Otherwise pull from the on-disk store and
+        # deep-copy so the two records don't share nested dicts.
+        if source and source == self._current_experiment_name:
             record = self._capture_state()
             record["notes"] = self._current_experiment_notes
         else:
-            record = dict(record)  # shallow copy to avoid mutating store entry
+            stored = self.experiment_store.get(source)
+            if stored is None:
+                record = self._capture_state()
+                record["notes"] = self._current_experiment_notes
+            else:
+                record = copy.deepcopy(stored)
         # Strip identity fields so save() treats it as a new record
         for k in ("name", "created_at", "modified_at"):
             record.pop(k, None)
