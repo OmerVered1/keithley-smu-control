@@ -61,6 +61,10 @@ class Series:
     xs: list[float] = field(default_factory=list)
     ys: list[float] = field(default_factory=list)
     curve: pg.PlotDataItem = None
+    axis: pg.AxisItem = None
+    view_box: pg.ViewBox = None
+    axis_row: int = 2
+    axis_col: int = 0
     visible: bool = True
     legend_btn: QPushButton = None
 
@@ -77,7 +81,6 @@ class RealTimeTab(QWidget):
             name: Series(name=name, unit=unit, color=color)
             for name, unit, color in SIGNAL_SPECS
         }
-        self._active_axis_signal: str = "HF"
 
         self._setup_ui()
 
@@ -137,17 +140,56 @@ class RealTimeTab(QWidget):
         )
 
     def _build_plot(self) -> pg.PlotWidget:
+        """One Y axis per signal, all sharing the X axis.
+
+        The first signal (HF) uses the plot's built-in left axis and its
+        primary ViewBox. Every other signal gets a new right-side axis
+        stacked outward, each with its own ViewBox that X-links to the
+        primary. Toggling a signal off hides both its curve and its axis;
+        toggling on brings both back.
+        """
         self._plot = pg.PlotWidget()
         self._plot.setBackground("w")
         self._plot.showGrid(x=True, y=True, alpha=0.3)
-        self._plot.plotItem.setLabel("bottom", "Time since connect (s)")
-        for spec in SIGNAL_SPECS:
-            name, _, color = spec
-            curve = pg.PlotDataItem(pen=pg.mkPen(color, width=2), name=name)
-            self._plot.plotItem.addItem(curve)
-            self._series[name].curve = curve
-        self._apply_active_axis()
+
+        plot_item = self._plot.plotItem
+        plot_item.setLabel("bottom", "Time since connect (s)")
+
+        # Hide the built-in left axis entirely. All signals get uniform
+        # right-side axes so toggle-off can freely remove any axis without
+        # special-casing the primary.
+        plot_item.hideAxis("left")
+
+        for i, (name, unit, color) in enumerate(SIGNAL_SPECS):
+            s = self._series[name]
+            s.axis = pg.AxisItem("right")
+            s.axis.setLabel(f"{name} ({unit})", color=color)
+            s.axis.setPen(color)
+            s.axis.setTextPen(color)
+            s.axis_row = 2
+            s.axis_col = 2 + i
+            plot_item.layout.addItem(s.axis, s.axis_row, s.axis_col)
+            s.view_box = pg.ViewBox()
+            s.view_box.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
+            plot_item.scene().addItem(s.view_box)
+            s.axis.linkToView(s.view_box)
+            s.view_box.setXLink(plot_item.vb)
+            s.curve = pg.PlotDataItem(pen=pg.mkPen(color, width=2))
+            s.view_box.addItem(s.curve)
+
+        # Keep the ViewBoxes' geometry synced with the primary plot area
+        plot_item.vb.sigResized.connect(self._sync_viewboxes)
+        self._sync_viewboxes()
+
         return self._plot
+
+    def _sync_viewboxes(self) -> None:
+        primary = self._plot.plotItem.vb
+        rect = primary.sceneBoundingRect()
+        for s in self._series.values():
+            if s.view_box is not None and s.view_box is not primary:
+                s.view_box.setGeometry(rect)
+                s.view_box.linkedViewChanged(primary, s.view_box.XAxis)
 
     def _build_action_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -221,24 +263,27 @@ class RealTimeTab(QWidget):
     def _on_legend_toggle(self, name: str, checked: bool) -> None:
         s = self._series[name]
         s.visible = checked
+        plot_item = self._plot.plotItem
         if s.curve is not None:
             if checked:
                 s.curve.setData(s.xs, s.ys)
             else:
                 s.curve.setData([], [])
+        if s.axis is not None:
+            if checked:
+                # Re-add to layout at its reserved column so signals stay
+                # in a consistent left-to-right order.
+                plot_item.layout.addItem(s.axis, s.axis_row, s.axis_col)
+                s.axis.show()
+            else:
+                # Fully remove from layout so its column collapses and the
+                # plot area expands to fill the freed space.
+                plot_item.layout.removeItem(s.axis)
+                s.axis.hide()
         s.legend_btn.setStyleSheet(self._legend_style(s.color, active=checked))
-        if checked:
-            # Clicking a signal on brings its axis to the front
-            self._active_axis_signal = name
-            self._apply_active_axis()
-
-    def _apply_active_axis(self) -> None:
-        s = self._series.get(self._active_axis_signal)
-        if s is None:
-            return
-        self._plot.plotItem.setLabel("left", f"{s.name} ({s.unit})", color=s.color)
-        self._plot.plotItem.getAxis("left").setPen(s.color)
-        self._plot.plotItem.getAxis("left").setTextPen(s.color)
+        # Force the plot to re-flow, then re-sync the viewbox geometries
+        plot_item.layout.invalidate()
+        self._sync_viewboxes()
 
     # ---- Actions -----------------------------------------------------------
 

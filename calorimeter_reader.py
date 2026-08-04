@@ -47,12 +47,12 @@ CALORIMETERS: dict[str, dict] = {
     },
     "Drop (Alexsys)": {
         "mac": "00:50:c2:30:e1:eb",
-        # Calisto config shows HF at address 2, Sample T at address 4
-        # (S-type thermocouple, -49 to 1620 °C). Assuming the `arg` byte of
-        # <hdr><cmd><arg> matches Calisto's address. If HF returns garbage,
-        # try `00 01 00 0a 00 01` (C80 channel 1) or capture Drop TCP:1210
-        # traffic to nail down the family byte.
-        "cmd_hf": bytes.fromhex("000100" "0a" "0002"),
+        # v3.0.0 tried `00 01 00 0a 00 02` (matching Calisto's "HeatFlow at
+        # address 2") and got HF = 0.000 mW while Calisto showed 272.76 mW.
+        # So the wire protocol's arg byte is NOT the Calisto CAN address.
+        # Sample T at `00 01 00 08 00 04` works (matches C80's Sample T),
+        # so HF likely follows the same C80 convention: channel 1.
+        "cmd_hf": bytes.fromhex("000100" "0a" "0001"),
         "cmd_t":  bytes.fromhex("000100" "08" "0004"),
         "hf_unit": "mW",
         "t_unit": "°C",
