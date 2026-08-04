@@ -2910,6 +2910,11 @@ class Keithley2602BApp(QMainWindow):
 
         tabs.addTab(sweep_tab, "I-V Sweep")
 
+        # Tab 3: C80 Calorimeter (LAN reader running alongside Calisto)
+        from c80_tab import C80Tab
+        self.c80_tab = C80Tab(self)
+        tabs.addTab(self.c80_tab, "C80 Calorimeter")
+
         content_layout.addWidget(tabs)
         layout.addWidget(content)
 
@@ -3870,6 +3875,11 @@ class Keithley2602BApp(QMainWindow):
 
     def closeEvent(self, event):
         self.multimeter_panel.stop_live()
+        if hasattr(self, "c80_tab") and self.c80_tab is not None:
+            try:
+                self.c80_tab._stop_reader()
+            except Exception:
+                pass
         if self.smu:
             try:
                 self.smu.output_off("a")
