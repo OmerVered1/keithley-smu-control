@@ -46,13 +46,16 @@ from keithley2602b_driver import (
     SourceFunction, MeasureFunction, SenseMode
 )
 
+from calorimeter_reader import (
+    CALORIMETERS, CalorimeterReader, discover_calorimeter_ip, probe_port_free
+)
+
 # Configure pyqtgraph
 pg.setConfigOptions(antialias=True, background='#ffffff', foreground='#1a1a2e')
 
 # Version info
-__version__ = "2.1.0"
+from _version import __version__, __author__
 __app_name__ = "K2602B Control Suite"
-__author__ = "Omer Vered"
 __organization__ = "Omer Vered MSc Research"
 __copyright__ = "Copyright 2026 Omer Vered"
 
@@ -1568,10 +1571,11 @@ class ConnectionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.app = parent
-        self.setWindowTitle("Connect to Keithley 2602B")
-        self.setMinimumSize(550, 450)
+        self.setWindowTitle("Connect Instruments")
+        self.setMinimumSize(600, 620)
         self._setup_ui()
         self._refresh()
+        self._refresh_calorimeter_status()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -1644,9 +1648,120 @@ class ConnectionDialog(QDialog):
         simulate_btn.clicked.connect(self._simulate)
         layout.addWidget(simulate_btn)
 
-        cancel_btn = QPushButton("Cancel")
+        # ---- Calorimeter section (Setaram C80 / Drop, read-only LAN reader) ----
+        line3 = QFrame()
+        line3.setFrameShape(QFrame.HLine)
+        line3.setStyleSheet("background-color: #d1d5db;")
+        layout.addWidget(line3)
+
+        cal_group = QGroupBox("Calorimeter (read-only monitor)")
+        cal_layout = QVBoxLayout(cal_group)
+
+        cal_pick_row = QHBoxLayout()
+        cal_pick_row.addWidget(QLabel("Instrument:"))
+        self.cal_combo = QComboBox()
+        for name in CALORIMETERS.keys():
+            self.cal_combo.addItem(name)
+        cal_pick_row.addWidget(self.cal_combo, stretch=1)
+        cal_layout.addLayout(cal_pick_row)
+
+        cal_host_row = QHBoxLayout()
+        cal_host_row.addWidget(QLabel("Host:"))
+        self.cal_host = QLineEdit()
+        self.cal_host.setPlaceholderText("169.254.x.x (click Discover)")
+        cal_host_row.addWidget(self.cal_host, stretch=1)
+        self.cal_discover_btn = QPushButton("Discover")
+        self.cal_discover_btn.setToolTip(
+            "Look up the selected calorimeter's IP in the OS ARP cache using its\n"
+            "fixed MAC. Requires that Calisto has recently talked to the instrument."
+        )
+        self.cal_discover_btn.clicked.connect(self._on_calorimeter_discover)
+        cal_host_row.addWidget(self.cal_discover_btn)
+        cal_layout.addLayout(cal_host_row)
+
+        cal_ctrl_row = QHBoxLayout()
+        cal_ctrl_row.addWidget(QLabel("Poll (s):"))
+        self.cal_interval = QDoubleSpinBox()
+        self.cal_interval.setRange(0.5, 60.0)
+        self.cal_interval.setValue(1.0)
+        self.cal_interval.setSingleStep(0.5)
+        self.cal_interval.setDecimals(1)
+        cal_ctrl_row.addWidget(self.cal_interval)
+        cal_ctrl_row.addSpacing(20)
+        self.cal_connect_btn = QPushButton("Connect Calorimeter")
+        self.cal_connect_btn.setToolTip(
+            "The C80/Drop accepts only one TCP client at a time — close Calisto\n"
+            "before connecting. Reopen it afterwards to save data via Calisto."
+        )
+        self.cal_connect_btn.clicked.connect(self._on_calorimeter_connect_toggle)
+        cal_ctrl_row.addWidget(self.cal_connect_btn)
+        cal_ctrl_row.addStretch()
+        cal_layout.addLayout(cal_ctrl_row)
+
+        self.cal_status_label = QLabel("Not connected")
+        self.cal_status_label.setStyleSheet("color: #6b7280; font-size: 13px;")
+        cal_layout.addWidget(self.cal_status_label)
+
+        cal_note = QLabel(
+            "Read-only monitor. Configure and start experiments in Calisto first."
+        )
+        cal_note.setStyleSheet("color: #6b7280; font-size: 12px; font-style: italic;")
+        cal_layout.addWidget(cal_note)
+
+        layout.addWidget(cal_group)
+
+        cancel_btn = QPushButton("Close")
         cancel_btn.clicked.connect(self.reject)
         layout.addWidget(cancel_btn)
+
+    # ---- Calorimeter handlers ----
+
+    def _on_calorimeter_discover(self):
+        name = self.cal_combo.currentText()
+        mac = CALORIMETERS[name]["mac"]
+        ip, diag = discover_calorimeter_ip(mac)
+        if ip:
+            self.cal_host.setText(ip)
+            self.cal_status_label.setText(f"Found {name} at {ip}")
+            self.cal_status_label.setStyleSheet("color: #16a34a; font-size: 13px;")
+        else:
+            self.cal_status_label.setText(f"Discover failed: {diag}")
+            self.cal_status_label.setStyleSheet("color: #dc2626; font-size: 13px;")
+
+    def _on_calorimeter_connect_toggle(self):
+        if self.app.calorimeter_reader is not None:
+            self.app.disconnect_calorimeter()
+            self._refresh_calorimeter_status()
+            return
+
+        host = self.cal_host.text().strip()
+        if not host:
+            self._on_calorimeter_discover()
+            host = self.cal_host.text().strip()
+            if not host:
+                return
+
+        available, reason = probe_port_free(host)
+        if not available:
+            self.cal_status_label.setText(f"Cannot connect: {reason}")
+            self.cal_status_label.setStyleSheet("color: #dc2626; font-size: 13px;")
+            return
+
+        name = self.cal_combo.currentText()
+        self.app.connect_calorimeter(name, host, float(self.cal_interval.value()))
+        self._refresh_calorimeter_status()
+
+    def _refresh_calorimeter_status(self):
+        """Sync the calorimeter section's status and button labels with app state."""
+        if self.app.calorimeter_reader is not None:
+            name = self.app.calorimeter_name or "?"
+            host = self.app.calorimeter_host or "?"
+            self.cal_status_label.setText(f"Connected: {name} @ {host}")
+            self.cal_status_label.setStyleSheet("color: #16a34a; font-size: 13px;")
+            self.cal_connect_btn.setText("Disconnect Calorimeter")
+        else:
+            self.cal_connect_btn.setText("Connect Calorimeter")
+            # leave the last status message visible
 
     def _refresh(self):
         self.resource_list.clear()
@@ -2488,6 +2603,18 @@ class Keithley2602BApp(QMainWindow):
         self._live_csv_writer = None
         self._live_csv_path = None
 
+        # Calorimeter LAN reader (Setaram C80 / Drop). Read-only monitor.
+        self.calorimeter_reader: Optional[CalorimeterReader] = None
+        self.calorimeter_name: Optional[str] = None
+        self.calorimeter_host: Optional[str] = None
+        # Per-sweep sidecar CSV that records calorimeter samples under the
+        # same wall clock as the sweep CSV. Opened by _start_sweep, closed
+        # by _finalize_run.
+        self._cal_csv_file = None
+        self._cal_csv_writer = None
+        self._cal_csv_path = None
+        self._cal_sweep_t0: Optional[float] = None
+
         self.settings = QSettings(__organization__, __app_name__)
 
         self.setWindowTitle(f"{__app_name__} - Dual-Channel I-V Characterizer")
@@ -2500,6 +2627,9 @@ class Keithley2602BApp(QMainWindow):
         self._create_menu()
         self._setup_ui()
         self._setup_signals()
+
+        # Initial toolbar label (Keithley: Disconnected  |  Calorimeter: —)
+        self._update_connection_label()
 
     def _set_channel(self, channel: str):
         """Switch the active channel"""
@@ -2910,10 +3040,12 @@ class Keithley2602BApp(QMainWindow):
 
         tabs.addTab(sweep_tab, "I-V Sweep")
 
-        # Tab 3: C80 Calorimeter (LAN reader running alongside Calisto)
-        from c80_tab import C80Tab
-        self.c80_tab = C80Tab(self)
-        tabs.addTab(self.c80_tab, "C80 Calorimeter")
+        # Tab 3: Real Time — unified live view of calorimeter (HF, T) and any
+        # running K2602B sweep (V, I, R, P). Connection is managed from the
+        # Connect dialog; this tab is display-only.
+        from realtime_tab import RealTimeTab
+        self.realtime_tab = RealTimeTab(self)
+        tabs.addTab(self.realtime_tab, "Real Time")
 
         content_layout.addWidget(tabs)
         layout.addWidget(content)
@@ -3402,17 +3534,114 @@ class Keithley2602BApp(QMainWindow):
             simulation_resistance=simulation_resistance
         )
         self.smu.connect()
-
-        if simulate:
-            res_str = f"{simulation_resistance:.0f}\u03a9" if simulation_resistance < 1000 else f"{simulation_resistance/1000:.0f}k\u03a9"
-            self.connection_label.setText(f"SIM ({res_str})")
-            self.connection_label.setStyleSheet("color: #6b7280; font-weight: bold;")
-        else:
-            self.connection_label.setText("Connected")
-            self.connection_label.setStyleSheet("color: #16a34a; font-weight: bold;")
+        self._smu_sim_resistance = simulation_resistance if simulate else None
+        self._update_connection_label()
 
         self._update_output_buttons()
         self.status.showMessage("Connected to instrument")
+
+    # ---- Calorimeter (Setaram C80 / Drop) \u2014 read-only LAN monitor ----
+
+    def connect_calorimeter(self, name: str, host: str, interval_s: float):
+        """Open a read-only LAN connection to a Setaram calorimeter.
+
+        Called from ConnectionDialog. Runs a background QThread poller that
+        emits (wall_ts, hf, temp); samples are forwarded to the Real Time
+        tab and (during a sweep) written to the sidecar calorimeter CSV.
+        """
+        if self.calorimeter_reader is not None:
+            self.disconnect_calorimeter()
+
+        spec = CALORIMETERS.get(name)
+        if spec is None:
+            QMessageBox.warning(self, "Unknown calorimeter", name)
+            return
+        reader = CalorimeterReader(
+            host=host,
+            cmd_hf=spec["cmd_hf"],
+            cmd_t=spec["cmd_t"],
+            interval_s=interval_s,
+        )
+        reader.sample.connect(self._on_calorimeter_sample)
+        reader.error.connect(self._on_calorimeter_error)
+        reader.start()
+        self.calorimeter_reader = reader
+        self.calorimeter_name = name
+        self.calorimeter_host = host
+
+        # Reset the Real Time tab's X axis to "seconds since connect" \u2014 but
+        # only if no sweep is running (a running sweep already owns the axis)
+        if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
+            if not self.running:
+                self.realtime_tab.set_reference_now("connect")
+        self._update_connection_label()
+        self.status.showMessage(f"Calorimeter connected: {name} @ {host}")
+
+    def disconnect_calorimeter(self):
+        if self.calorimeter_reader is None:
+            return
+        try:
+            self.calorimeter_reader.stop()
+            self.calorimeter_reader.wait(2000)
+        except Exception:
+            pass
+        self.calorimeter_reader = None
+        self.calorimeter_name = None
+        self.calorimeter_host = None
+        self._update_connection_label()
+        self.status.showMessage("Calorimeter disconnected")
+
+    def _on_calorimeter_sample(self, wall_ts: float, hf: float, temp: float):
+        if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
+            self.realtime_tab.push_calorimeter_sample(wall_ts, hf, temp)
+        # If a sweep is running, log to sidecar CSV under the sweep's clock
+        if self._cal_csv_writer and self._cal_sweep_t0 is not None:
+            try:
+                self._cal_csv_writer.writerow([
+                    f"{wall_ts - self._cal_sweep_t0:.3f}",
+                    f"{hf:.6g}",
+                    f"{temp:.6g}",
+                ])
+                if self._cal_csv_file:
+                    self._cal_csv_file.flush()
+            except Exception:
+                pass
+
+    def _on_calorimeter_error(self, msg: str):
+        self.status.showMessage(f"Calorimeter: {msg}")
+        # Clean up the reader so the next connect attempt starts fresh
+        self.calorimeter_reader = None
+        self.calorimeter_name = None
+        self.calorimeter_host = None
+        self._update_connection_label()
+
+    def _update_connection_label(self):
+        """Toolbar label reflects both Keithley and calorimeter status."""
+        parts = []
+        if self.smu is None:
+            parts.append(("Keithley: Disconnected", "#dc2626"))
+        elif getattr(self, "_smu_sim_resistance", None) is not None:
+            r = self._smu_sim_resistance
+            res_str = f"{r:.0f}\u03a9" if r < 1000 else f"{r/1000:.0f}k\u03a9"
+            parts.append((f"Keithley: SIM ({res_str})", "#6b7280"))
+        else:
+            parts.append(("Keithley: Connected", "#16a34a"))
+
+        if self.calorimeter_reader is None:
+            parts.append(("Calorimeter: \u2014", "#6b7280"))
+        else:
+            name = self.calorimeter_name or "?"
+            parts.append((f"Calorimeter: {name}", "#16a34a"))
+
+        # Render as rich text with per-segment color
+        html = "  |  ".join(
+            f"<span style='color:{color};'>{text}</span>" for text, color in parts
+        )
+        self.connection_label.setText(html)
+        # Keep styleSheet minimal \u2014 colors handled by inline spans
+        self.connection_label.setStyleSheet(
+            "font-family: 'Inter'; font-weight: bold; font-size: 14px;"
+        )
 
     def start_sweep(self):
         if not self.smu:
@@ -3502,6 +3731,11 @@ class Keithley2602BApp(QMainWindow):
         total = len(sweep_values) * self.timing_settings.repeat.value()
         self.total_sweep_points = total
         self.sweep_start_time = time.time()
+
+        # Reset Real Time tab's X axis to "seconds since experiment start"
+        if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
+            self.realtime_tab.set_reference_now("experiment")
+        self._cal_sweep_t0 = self.sweep_start_time
         self.run_number += 1
         self.run_start_datetime = datetime.now()
         self.progress.setMaximum(total)
@@ -3525,6 +3759,25 @@ class Keithley2602BApp(QMainWindow):
             print(f"Live CSV open error: {e}")
             self._live_csv_file = None
             self._live_csv_writer = None
+
+        # Open calorimeter sidecar CSV if a calorimeter is connected. Uses
+        # the same wall-clock reference (sweep start) so both files are
+        # trivially time-alignable.
+        if self.calorimeter_reader is not None and self._live_csv_path:
+            try:
+                cal_path = self._live_csv_path.replace(".csv", "_calorimeter.csv")
+                self._cal_csv_path = cal_path
+                self._cal_csv_file = open(cal_path, "w", newline="", encoding="utf-8")
+                self._cal_csv_writer = csv.writer(self._cal_csv_file)
+                self._cal_csv_writer.writerow(
+                    ["Calorimeter", self.calorimeter_name or ""]
+                )
+                self._cal_csv_writer.writerow(["Elapsed(s)", "HF(mW)", "T(C)"])
+                self._cal_csv_file.flush()
+            except Exception as e:
+                print(f"Calorimeter CSV open error: {e}")
+                self._cal_csv_file = None
+                self._cal_csv_writer = None
 
         thread = threading.Thread(target=self._run_sweep, args=(sweep_values, ch))
         thread.daemon = True
@@ -3661,6 +3914,14 @@ class Keithley2602BApp(QMainWindow):
             self._update_output_buttons()
             return
 
+        # Feed the Real Time tab. `point.timestamp` is seconds since sweep
+        # start; the tab uses wall-clock time, so add self.sweep_start_time.
+        if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
+            wall_ts = (self.sweep_start_time or time.time()) + point.timestamp
+            self.realtime_tab.push_keithley_sample(
+                wall_ts, point.voltage, point.current, point.resistance, point.power
+            )
+
         self.table.add_point(point)
         self.graph.add_point(point)
 
@@ -3731,6 +3992,17 @@ class Keithley2602BApp(QMainWindow):
                 self._live_csv_path = None
             elif self.auto_save_enabled and self.measurement_data:
                 self._auto_save_csv()
+
+            # Close calorimeter sidecar CSV (if opened for this run)
+            if self._cal_csv_file:
+                try:
+                    self._cal_csv_file.close()
+                except Exception:
+                    pass
+                self._cal_csv_file = None
+                self._cal_csv_writer = None
+                self._cal_csv_path = None
+            self._cal_sweep_t0 = None
 
     def stop_sweep(self):
         self.abort_flag = True
@@ -3875,9 +4147,9 @@ class Keithley2602BApp(QMainWindow):
 
     def closeEvent(self, event):
         self.multimeter_panel.stop_live()
-        if hasattr(self, "c80_tab") and self.c80_tab is not None:
+        if self.calorimeter_reader is not None:
             try:
-                self.c80_tab._stop_reader()
+                self.disconnect_calorimeter()
             except Exception:
                 pass
         if self.smu:

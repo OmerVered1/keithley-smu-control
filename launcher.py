@@ -25,9 +25,7 @@ def _asset_path(name: str) -> str:
     return os.path.join(base, "assets", name)
 
 
-__version__ = "2.2.0"
-__app_name__ = "Keithley SMU Control Suite"
-__author__ = "Omer Vered"
+from _version import __version__, __app_name__, __author__
 
 
 class InstrumentCard(QFrame):
