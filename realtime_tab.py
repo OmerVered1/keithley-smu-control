@@ -159,13 +159,13 @@ class RealTimeTab(QWidget):
 
     def _build_controls_panel(self) -> QGroupBox:
         group = QGroupBox("Signals")
-        group.setMinimumWidth(340)
+        group.setMinimumWidth(80)
         grid = QGridLayout(group)
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(6)
 
-        # Header row
-        headers = ["", "Signal", "Value", "Unit", "Auto"]
+        # Header row (all black; only tick numbers/units on the plot get color)
+        headers = ["", "Signal", "Unit", "Auto"]
         for col, text in enumerate(headers):
             lbl = QLabel(text)
             lbl.setStyleSheet(f"color: {MUTED}; font-size: 11px;")
@@ -183,15 +183,8 @@ class RealTimeTab(QWidget):
             grid.addWidget(show_cb, row, 0)
 
             name_lbl = QLabel(spec.name)
-            name_lbl.setStyleSheet(
-                f"color: {spec.color}; font-weight: bold; font-size: 13px;"
-            )
+            name_lbl.setStyleSheet("color: #000000; font-weight: bold; font-size: 13px;")
             grid.addWidget(name_lbl, row, 1)
-
-            value_lbl = QLabel("—")
-            value_lbl.setStyleSheet(f"color: {spec.color}; font-size: 13px; font-family: monospace;")
-            value_lbl.setMinimumWidth(85)
-            grid.addWidget(value_lbl, row, 2)
 
             unit_combo = QComboBox()
             for unit_label, _ in spec.units:
@@ -199,19 +192,18 @@ class RealTimeTab(QWidget):
             unit_combo.currentIndexChanged.connect(
                 lambda idx, k=spec.key: self._on_unit_changed(k, idx)
             )
-            grid.addWidget(unit_combo, row, 3)
+            grid.addWidget(unit_combo, row, 2)
 
             auto_cb = QCheckBox()
             auto_cb.setChecked(True)
             auto_cb.toggled.connect(
                 lambda checked, k=spec.key: self._on_auto_range_toggled(k, checked)
             )
-            grid.addWidget(auto_cb, row, 4)
+            grid.addWidget(auto_cb, row, 3)
 
             self._control_rows[spec.key] = {
                 "show": show_cb,
                 "name": name_lbl,
-                "value": value_lbl,
                 "unit": unit_combo,
                 "auto": auto_cb,
             }
@@ -219,6 +211,26 @@ class RealTimeTab(QWidget):
 
         grid.setRowStretch(row, 1)
         return group
+
+    def create_status_values_widget(self) -> QWidget:
+        """Compact per-signal value strip meant to sit in the app status bar.
+
+        Text (signal name) is black; the numeric value + unit are colored.
+        Only signals currently `available` are shown.
+        """
+        w = QWidget()
+        layout = QHBoxLayout(w)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+        self._status_labels: dict[str, QLabel] = {}
+        for spec in SIGNAL_CATALOG:
+            lbl = QLabel()
+            lbl.setTextFormat(Qt.RichText)
+            lbl.setStyleSheet("font-size: 12px;")
+            layout.addWidget(lbl)
+            self._status_labels[spec.key] = lbl
+            lbl.setVisible(self._series[spec.key].available)
+        return w
 
     def _build_plot(self) -> pg.PlotWidget:
         self._plot = pg.PlotWidget()
@@ -242,12 +254,14 @@ class RealTimeTab(QWidget):
             s.view_box.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
             plot_item.scene().addItem(s.view_box)
             s.view_box.setXLink(plot_item.vb)
-            s.curve = pg.PlotDataItem(pen=pg.mkPen(spec.color, width=2))
+            s.curve = pg.PlotDataItem(pen=pg.mkPen(spec.color, width=1))
             s.view_box.addItem(s.curve)
-            # Right-side axis for this signal, created once, reused
+            # Right-side axis for this signal, created once, reused.
+            # Axis line = black, tick numbers = colored, label = mixed
+            # (name black + unit colored) via HTML in setLabel.
             s.axis = pg.AxisItem("right")
-            s.axis.setLabel(f"{spec.name} ({s.current_unit_label()})", color=spec.color)
-            s.axis.setPen(spec.color)
+            s.axis.setLabel(_axis_label_html(spec.name, s.current_unit_label(), spec.color))
+            s.axis.setPen("#000000")
             s.axis.setTextPen(spec.color)
             s.axis.linkToView(s.view_box)
 
@@ -339,19 +353,19 @@ class RealTimeTab(QWidget):
             self._sync_viewboxes()
             return
 
-        # First visible signal owns the built-in left axis
+        # First visible signal owns the built-in left axis. Axis line black,
+        # tick numbers in the signal's color, label uses HTML so the signal
+        # name is black and the unit is colored.
         first = visible[0]
         left_axis.linkToView(first.view_box)
-        left_axis.setLabel(f"{first.spec.name} ({first.current_unit_label()})",
-                           color=first.spec.color)
-        left_axis.setPen(first.spec.color)
+        left_axis.setLabel(_axis_label_html(first.spec.name, first.current_unit_label(), first.spec.color))
+        left_axis.setPen("#000000")
         left_axis.setTextPen(first.spec.color)
         plot_item.showAxis("left")
 
         # Remaining visible signals: right-side stacked axes (innermost first)
         for i, s in enumerate(visible[1:]):
-            s.axis.setLabel(f"{s.spec.name} ({s.current_unit_label()})",
-                            color=s.spec.color)
+            s.axis.setLabel(_axis_label_html(s.spec.name, s.current_unit_label(), s.spec.color))
             layout.addItem(s.axis, 2, 2 + i)
             s.axis.show()
 
@@ -381,12 +395,18 @@ class RealTimeTab(QWidget):
     def _on_unit_changed(self, key: str, idx: int) -> None:
         s = self._series[key]
         s.unit_index = idx
+        # Redraw any axis showing this signal (its own right-axis or the
+        # built-in left-axis if it's the first-visible).
+        new_label = _axis_label_html(s.spec.name, s.current_unit_label(), s.spec.color)
         if s.axis is not None:
-            s.axis.setLabel(f"{s.spec.name} ({s.current_unit_label()})",
-                            color=s.spec.color)
+            s.axis.setLabel(new_label)
+        left_axis = self._plot.plotItem.getAxis("left")
+        visible = [self._series[spec.key] for spec in SIGNAL_CATALOG
+                   if self._series[spec.key].available and self._series[spec.key].visible]
+        if visible and visible[0] is s:
+            left_axis.setLabel(new_label)
         if s.curve is not None and s.visible:
             s.curve.setData(s.xs, s.display_ys())
-        # Update value readout too
         if s.ys_base:
             self._update_value_label(s)
 
@@ -402,7 +422,7 @@ class RealTimeTab(QWidget):
         """Hide control rows for signals not exposed by the current
         instrument. `keys` is a list of signal keys ("hf", "t", "ext_t", …).
         Signals not in `keys` become both `available=False` and hidden in
-        the control panel; they cannot be toggled on.
+        the control panel + status-bar strip; they cannot be toggled on.
         """
         available_set = set(keys)
         for spec in SIGNAL_CATALOG:
@@ -410,11 +430,12 @@ class RealTimeTab(QWidget):
             avail = spec.key in available_set
             s.available = avail
             row = self._control_rows.get(spec.key)
-            if row is None:
-                continue
-            # Hide/show the row
-            for w in (row["show"], row["name"], row["value"], row["unit"], row["auto"]):
-                w.setVisible(avail)
+            if row is not None:
+                for w in (row["show"], row["name"], row["unit"], row["auto"]):
+                    w.setVisible(avail)
+            labels = getattr(self, "_status_labels", None)
+            if labels is not None and spec.key in labels:
+                labels[spec.key].setVisible(avail)
             if not avail:
                 s.visible = False
         self._rebuild_axes()
@@ -457,23 +478,36 @@ class RealTimeTab(QWidget):
         if s.visible and s.curve is not None:
             s.curve.setData(s.xs, s.display_ys())
         self._update_value_label(s)
-        # Follow mode: pin the right edge to the newest sample, preserving
-        # the current X-window width.
+        # Follow mode: X ranges from 0 to the latest sample time — t=0 pinned
+        # to the left, right edge auto-expands as new data arrives.
         if getattr(self, "follow_cb", None) is not None and self.follow_cb.isChecked():
-            vb = self._plot.plotItem.vb
-            (x_lo, x_hi), _ = vb.viewRange()
-            width = x_hi - x_lo
-            if width <= 0:
-                width = 60.0   # default rolling window
-            vb.setXRange(rel_t - width, rel_t, padding=0)
+            max_t = max(
+                (series.xs[-1] for series in self._series.values() if series.xs),
+                default=rel_t,
+            )
+            if max_t <= 0:
+                max_t = 0.01
+            self._plot.plotItem.vb.setXRange(0.0, max_t, padding=0.02)
 
     def _update_value_label(self, s: Series) -> None:
-        row = self._control_rows.get(s.spec.key)
-        if row is None or not s.ys_base:
+        if not s.ys_base:
+            return
+        labels = getattr(self, "_status_labels", None)
+        if labels is None:
+            return
+        lbl = labels.get(s.spec.key)
+        if lbl is None:
             return
         transform = s.spec.units[s.unit_index][1]
         display_val = transform(s.ys_base[-1])
-        row["value"].setText(f"{display_val:.4g} {s.current_unit_label()}")
+        # 9 significant digits preserves the full float32 wire precision
+        # without cluttering the display with FP-noise trailing digits.
+        val_str = f"{display_val:.9g}"
+        unit = s.current_unit_label()
+        lbl.setText(
+            f"<span style='color:#000000;'>{s.spec.name}:</span> "
+            f"<span style='color:{s.spec.color};font-weight:bold;'>{val_str} {unit}</span>"
+        )
 
     # ---- Actions -----------------------------------------------------------
 
@@ -483,9 +517,9 @@ class RealTimeTab(QWidget):
             s.ys_base.clear()
             if s.curve is not None:
                 s.curve.setData([], [])
-            row = self._control_rows.get(s.spec.key)
-            if row is not None:
-                row["value"].setText("—")
+            labels = getattr(self, "_status_labels", None)
+            if labels is not None and s.spec.key in labels:
+                labels[s.spec.key].setText("")
 
     def _on_save_csv(self) -> None:
         n = sum(len(s.xs) for s in self._series.values() if s.available)
@@ -526,5 +560,14 @@ class RealTimeTab(QWidget):
         QMessageBox.information(
             self, "Saved", f"Wrote {len(timeline)} rows to\n{path}"
         )
+
+
+def _axis_label_html(name: str, unit: str, color: str) -> str:
+    """Axis label with the signal name in black and the unit in the signal's
+    color. pyqtgraph AxisItem.setLabel accepts HTML."""
+    return (
+        f"<span style='color:#000000;'>{name} </span>"
+        f"<span style='color:{color};'>({unit})</span>"
+    )
 
 

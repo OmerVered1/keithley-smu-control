@@ -3054,6 +3054,16 @@ class Keithley2602BApp(QMainWindow):
         self.status = QStatusBar()
         self.setStatusBar(self.status)
 
+        # Real Time signal values on the LEFT side of the status bar.
+        # `insertPermanentWidget(0, …)` puts it at the leftmost position
+        # within the permanent-widget area, so it stays visible even when
+        # showMessage() fires and lines up to the left of the progress
+        # widgets that get added below.
+        if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
+            self.status.insertPermanentWidget(
+                0, self.realtime_tab.create_status_values_widget()
+            )
+
         self.progress_label = QLabel("")
         self.progress_label.setStyleSheet("font-family: 'Inter'; color: #9ca3af;")
         self.status.addPermanentWidget(self.progress_label)
