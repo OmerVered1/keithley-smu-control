@@ -3546,8 +3546,8 @@ class Keithley2602BApp(QMainWindow):
         """Open a read-only LAN connection to a Setaram calorimeter.
 
         Called from ConnectionDialog. Runs a background QThread poller that
-        emits (wall_ts, hf, temp); samples are forwarded to the Real Time
-        tab and (during a sweep) written to the sidecar calorimeter CSV.
+        emits (wall_ts, readings_dict); samples are forwarded to the Real
+        Time tab and (during a sweep) written to the sidecar calorimeter CSV.
         """
         if self.calorimeter_reader is not None:
             self.disconnect_calorimeter()
@@ -3556,10 +3556,10 @@ class Keithley2602BApp(QMainWindow):
         if spec is None:
             QMessageBox.warning(self, "Unknown calorimeter", name)
             return
+        channels = spec["channels"]
         reader = CalorimeterReader(
             host=host,
-            cmd_hf=spec["cmd_hf"],
-            cmd_t=spec["cmd_t"],
+            channels=channels,
             interval_s=interval_s,
         )
         reader.sample.connect(self._on_calorimeter_sample)
@@ -3569,9 +3569,11 @@ class Keithley2602BApp(QMainWindow):
         self.calorimeter_name = name
         self.calorimeter_host = host
 
-        # Reset the Real Time tab's X axis to "seconds since connect" \u2014 but
-        # only if no sweep is running (a running sweep already owns the axis)
+        # Tell the Real Time tab which calorimeter channels + Keithley
+        # signals are available. Keithley signals are always available.
         if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
+            available = list(channels.keys()) + ["v", "i", "r", "p"]
+            self.realtime_tab.set_available_signals(available)
             if not self.running:
                 self.realtime_tab.set_reference_now("connect")
         self._update_connection_label()
@@ -3591,16 +3593,17 @@ class Keithley2602BApp(QMainWindow):
         self._update_connection_label()
         self.status.showMessage("Calorimeter disconnected")
 
-    def _on_calorimeter_sample(self, wall_ts: float, hf: float, temp: float):
+    def _on_calorimeter_sample(self, wall_ts: float, readings: dict):
         if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
-            self.realtime_tab.push_calorimeter_sample(wall_ts, hf, temp)
+            self.realtime_tab.push_calorimeter_sample(wall_ts, readings)
         # If a sweep is running, log to sidecar CSV under the sweep's clock
         if self._cal_csv_writer and self._cal_sweep_t0 is not None:
             try:
                 self._cal_csv_writer.writerow([
                     f"{wall_ts - self._cal_sweep_t0:.3f}",
-                    f"{hf:.6g}",
-                    f"{temp:.6g}",
+                    f"{readings.get('hf', ''):.6g}" if readings.get('hf') is not None else "",
+                    f"{readings.get('t', ''):.6g}" if readings.get('t') is not None else "",
+                    f"{readings.get('ext_t', ''):.6g}" if readings.get('ext_t') is not None else "",
                 ])
                 if self._cal_csv_file:
                     self._cal_csv_file.flush()
@@ -3772,7 +3775,9 @@ class Keithley2602BApp(QMainWindow):
                 self._cal_csv_writer.writerow(
                     ["Calorimeter", self.calorimeter_name or ""]
                 )
-                self._cal_csv_writer.writerow(["Elapsed(s)", "HF(mW)", "T(C)"])
+                self._cal_csv_writer.writerow(
+                    ["Elapsed(s)", "HF(mW)", "T(C)", "ExtT(C)"]
+                )
                 self._cal_csv_file.flush()
             except Exception as e:
                 print(f"Calorimeter CSV open error: {e}")

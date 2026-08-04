@@ -2,21 +2,22 @@
 """
 Setaram calorimeter LAN reader (C80, Drop, other Setaram Ethernet controllers).
 
-This module is read-only by construction. `_read_channel` sends only the two
-hard-coded GET commands taken from the CALORIMETERS registry. No public method
-accepts arbitrary bytes. Do not add write/set commands here without explicit
-safety review — the connected calorimeter may be running an unattended
-temperature profile driven by Calisto, and modifying its state from a second
-tool could damage samples or the instrument.
+This module is read-only by construction. `_read_channel` sends only the
+hard-coded GET commands taken from the CALORIMETERS registry's `channels`
+dict. No public method accepts arbitrary bytes. Do not add write/set commands
+here without explicit safety review — the connected calorimeter may be
+running an unattended temperature profile driven by Calisto, and modifying
+its state from a second tool could damage samples or the instrument.
 
 Protocol (reverse-engineered Aug 2026 from a C80 Wireshark capture):
     Frame layout:  <hdr:2> <cmd:2> <arg:2> [payload…]   (big-endian)
     Server echoes the 6 request bytes and appends payload (float32 BE for
     scalar reads).
 
-The Drop calorimeter (Alexsys) is assumed to use the same command bytes until
-verified on-bench. If its HF/T values look wrong, capture Drop traffic and
-extend the registry with per-instrument commands.
+Channel names used in the registry are stable keys the UI depends on:
+    "hf"     Heat Flow (mW)
+    "t"      Sample Temperature (°C)
+    "ext_t"  External / QDOS Temperature (°C) — Drop only
 """
 
 from __future__ import annotations
@@ -39,23 +40,24 @@ C80_PORT = 1210
 CALORIMETERS: dict[str, dict] = {
     "C80 (Setaram)": {
         "mac": "00:50:c2:30:e1:cc",
-        # C80 wire capture: HF is on channel 1, Sample T on channel 4.
-        "cmd_hf": bytes.fromhex("000100" "0a" "0001"),
-        "cmd_t":  bytes.fromhex("000100" "08" "0004"),
-        "hf_unit": "mW",
-        "t_unit": "°C",
+        # Verified on-bench (Aug 2026): HF on channel 1, Sample T on channel 4.
+        "channels": {
+            "hf": bytes.fromhex("000100" "0a" "0001"),
+            "t":  bytes.fromhex("000100" "08" "0004"),
+        },
     },
     "Drop (Alexsys)": {
         "mac": "00:50:c2:30:e1:eb",
-        # v3.0.0 tried `00 01 00 0a 00 02` (matching Calisto's "HeatFlow at
-        # address 2") and got HF = 0.000 mW while Calisto showed 272.76 mW.
-        # So the wire protocol's arg byte is NOT the Calisto CAN address.
-        # Sample T at `00 01 00 08 00 04` works (matches C80's Sample T),
-        # so HF likely follows the same C80 convention: channel 1.
-        "cmd_hf": bytes.fromhex("000100" "0a" "0001"),
-        "cmd_t":  bytes.fromhex("000100" "08" "0004"),
-        "hf_unit": "mW",
-        "t_unit": "°C",
+        # Verified on-bench (Aug 2026):
+        #   HF on channel 1 (same as C80, NOT Calisto's CAN address 2)
+        #   Sample T on channel 4 (S-type thermocouple, -49..1620 °C)
+        # QDOS external T assumed on channel 3 (Calisto shows it at address
+        # 3, K-type, -200..1050 °C). If Ext T reads 0 or garbage, adjust.
+        "channels": {
+            "hf":    bytes.fromhex("000100" "0a" "0001"),
+            "t":     bytes.fromhex("000100" "08" "0004"),
+            "ext_t": bytes.fromhex("000100" "08" "0003"),
+        },
     },
 }
 
@@ -141,22 +143,23 @@ def probe_port_free(host: str, port: int = C80_PORT, timeout: float = 1.0) -> tu
 # ----- Reader thread --------------------------------------------------------
 
 class CalorimeterReader(QThread):
-    """Background thread that polls the two configured GET commands and emits
-    sample(wall_clock_ts, hf, temp) at ~interval_s cadence. Emits error(msg)
-    and exits on connect/read failure.
+    """Background thread that polls the configured GET commands for one
+    calorimeter and emits sample(wall_clock_ts, readings) at ~interval_s
+    cadence. `readings` is a dict keyed by channel name (e.g. "hf", "t",
+    "ext_t") with float32 values. Emits error(msg) and exits on
+    connect/read failure.
 
-    `wall_clock_ts` is `time.time()` (seconds since epoch). The consuming UI
-    subtracts its own reference clock to draw a relative-time axis.
+    `wall_clock_ts` is `time.time()` (seconds since epoch). The consuming
+    UI subtracts its own reference clock to draw a relative-time axis.
     """
 
-    sample = pyqtSignal(float, float, float)
+    sample = pyqtSignal(float, dict)
     error = pyqtSignal(str)
 
     def __init__(
         self,
         host: str,
-        cmd_hf: bytes,
-        cmd_t: bytes,
+        channels: dict[str, bytes],
         port: int = C80_PORT,
         interval_s: float = 1.0,
         parent=None,
@@ -164,8 +167,8 @@ class CalorimeterReader(QThread):
         super().__init__(parent)
         self._host = host
         self._port = port
-        self._cmd_hf = cmd_hf
-        self._cmd_t = cmd_t
+        # Copy so a mutation on the caller side can't affect the polling loop
+        self._channels: dict[str, bytes] = dict(channels)
         self._interval = max(0.1, float(interval_s))
         self._stop = False
 
@@ -173,8 +176,8 @@ class CalorimeterReader(QThread):
         self._stop = True
 
     def _read_channel(self, sock: socket.socket, cmd: bytes) -> float:
-        # Only two `cmd` values ever reach this method, both hard-coded in
-        # the CALORIMETERS registry. See module docstring.
+        # `cmd` values only come from the immutable CALORIMETERS registry;
+        # see module docstring.
         sock.sendall(cmd)
         buf = b""
         while len(buf) < RSP_LEN:
@@ -195,13 +198,14 @@ class CalorimeterReader(QThread):
         next_tick = time.monotonic()
         try:
             while not self._stop:
+                readings: dict[str, float] = {}
                 try:
-                    hf = self._read_channel(sock, self._cmd_hf)
-                    t = self._read_channel(sock, self._cmd_t)
+                    for name, cmd in self._channels.items():
+                        readings[name] = self._read_channel(sock, cmd)
                 except Exception as e:
                     self.error.emit(f"read failed: {e}")
                     return
-                self.sample.emit(time.time(), hf, t)
+                self.sample.emit(time.time(), readings)
                 next_tick += self._interval
                 remaining_ms = int((next_tick - time.monotonic()) * 1000)
                 if remaining_ms > 0:
