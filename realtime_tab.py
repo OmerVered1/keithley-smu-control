@@ -31,6 +31,7 @@ import csv
 import time
 from dataclasses import dataclass, field
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QCheckBox,
@@ -42,6 +43,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -139,12 +141,19 @@ class RealTimeTab(QWidget):
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(10)
 
-        # Two-column layout: plot on the left, per-signal controls on the right
-        top = QHBoxLayout()
-        top.setSpacing(12)
-        top.addWidget(self._build_plot(), stretch=1)
-        top.addWidget(self._build_controls_panel())
-        outer.addLayout(top, stretch=1)
+        # Splitter so the user can drag-to-shrink the controls panel.
+        # Controls on the LEFT, plot on the RIGHT.
+        splitter = QSplitter(Qt.Horizontal)
+        controls = self._build_controls_panel()
+        controls.setMinimumWidth(80)   # can shrink but not fully collapse by mistake
+        splitter.addWidget(controls)
+        splitter.addWidget(self._build_plot())
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setCollapsible(0, True)   # drag all the way to hide
+        splitter.setCollapsible(1, False)
+        splitter.setSizes([340, 900])
+        outer.addWidget(splitter, stretch=1)
 
         outer.addLayout(self._build_action_row())
 
@@ -244,13 +253,38 @@ class RealTimeTab(QWidget):
 
         # Keep aux ViewBoxes' geometry synced with the main plot area
         plot_item.vb.sigResized.connect(self._sync_viewboxes)
+        # Manual pan/zoom on X disables Follow so the user can navigate
+        # earlier data without the plot snapping back on the next sample.
+        plot_item.vb.sigRangeChangedManually.connect(self._on_manual_range_change)
 
         self._rebuild_axes()
         return self._plot
 
+    def _on_manual_range_change(self, _mask=None) -> None:
+        if getattr(self, "follow_cb", None) is not None and self.follow_cb.isChecked():
+            self.follow_cb.setChecked(False)
+
     def _build_action_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
+
+        self.follow_cb = QCheckBox("Follow")
+        self.follow_cb.setChecked(True)
+        self.follow_cb.setToolTip(
+            "Auto-scroll X so the latest sample stays at the right edge.\n"
+            "Preserves the current X window width; disables when you pan/zoom X."
+        )
+        row.addWidget(self.follow_cb)
+
+        self.reset_btn = QPushButton("Reset View")
+        self.reset_btn.setToolTip(
+            "Re-enable auto-range on X and every visible signal's Y axis.\n"
+            "Use when scrolling or zooming has left the plot in a weird state."
+        )
+        self.reset_btn.clicked.connect(self._on_reset_view)
+        row.addWidget(self.reset_btn)
+
         row.addStretch()
+
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self._on_clear)
         row.addWidget(self.clear_btn)
@@ -258,6 +292,17 @@ class RealTimeTab(QWidget):
         self.save_btn.clicked.connect(self._on_save_csv)
         row.addWidget(self.save_btn)
         return row
+
+    def _on_reset_view(self) -> None:
+        primary = self._plot.plotItem.vb
+        primary.enableAutoRange(axis=pg.ViewBox.XAxis, enable=True)
+        for s in self._series.values():
+            if s.view_box is not None and s.available and s.visible:
+                s.view_box.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
+                # Also re-sync the per-signal auto-range checkbox
+                row = self._control_rows.get(s.spec.key)
+                if row is not None:
+                    row["auto"].setChecked(True)
 
     # ---- Axis layout -------------------------------------------------------
 
@@ -412,6 +457,15 @@ class RealTimeTab(QWidget):
         if s.visible and s.curve is not None:
             s.curve.setData(s.xs, s.display_ys())
         self._update_value_label(s)
+        # Follow mode: pin the right edge to the newest sample, preserving
+        # the current X-window width.
+        if getattr(self, "follow_cb", None) is not None and self.follow_cb.isChecked():
+            vb = self._plot.plotItem.vb
+            (x_lo, x_hi), _ = vb.viewRange()
+            width = x_hi - x_lo
+            if width <= 0:
+                width = 60.0   # default rolling window
+            vb.setXRange(rel_t - width, rel_t, padding=0)
 
     def _update_value_label(self, s: Series) -> None:
         row = self._control_rows.get(s.spec.key)
