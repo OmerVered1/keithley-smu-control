@@ -22,7 +22,7 @@ import json
 import copy
 import numpy as np
 from typing import Optional, List, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from PyQt5.QtWidgets import (
@@ -72,6 +72,42 @@ class MeasurementPoint:
     current: Optional[float] = None
     resistance: Optional[float] = None
     power: Optional[float] = None
+    # Latest calorimeter reading at the moment this sweep sample was taken —
+    # populated by _run_sweep only when a calorimeter is connected. Keys are
+    # the calorimeter channel names ("hf", "t", "ext_t"); values are the
+    # float32 samples in their base units. Empty dict when no calorimeter.
+    cal_readings: dict = field(default_factory=dict)
+
+
+# Column layout shared by the live-streaming CSV write and the batch
+# _write_csv path so both files have identical header/row shape.
+
+_CAL_COLUMN_LABELS = {"hf": "HF(mW)", "t": "T(C)", "ext_t": "ExtT(C)"}
+
+
+def _sweep_csv_header(cal_channels) -> list:
+    header = ['Index', 'Channel', 'Computer_Time', 'Elapsed(s)',
+              'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(mW)']
+    for key in cal_channels:
+        header.append(_CAL_COLUMN_LABELS.get(key, key))
+    return header
+
+
+def _sweep_csv_row(point, cal_channels) -> list:
+    row = [
+        point.index,
+        point.channel.upper(),
+        point.computer_time,
+        f"{point.timestamp:.6f}",
+        f"{point.voltage:.9e}" if point.voltage else "",
+        f"{point.current:.9e}" if point.current else "",
+        f"{point.resistance:.9e}" if point.resistance else "",
+        f"{point.power*1000:.9e}" if point.power else "",
+    ]
+    for key in cal_channels:
+        v = point.cal_readings.get(key) if point.cal_readings else None
+        row.append(f"{v:.6g}" if v is not None else "")
+    return row
 
 
 # === Experiments ===
@@ -2607,13 +2643,15 @@ class Keithley2602BApp(QMainWindow):
         self.calorimeter_reader: Optional[CalorimeterReader] = None
         self.calorimeter_name: Optional[str] = None
         self.calorimeter_host: Optional[str] = None
-        # Per-sweep sidecar CSV that records calorimeter samples under the
-        # same wall clock as the sweep CSV. Opened by _start_sweep, closed
-        # by _finalize_run.
-        self._cal_csv_file = None
-        self._cal_csv_writer = None
-        self._cal_csv_path = None
-        self._cal_sweep_t0: Optional[float] = None
+        # Latest calorimeter sample, kept fresh by _on_calorimeter_sample.
+        # Snapshotted into each MeasurementPoint during a sweep so both live
+        # streaming and batch export can include cal columns in the same CSV
+        # row as the Keithley reading.
+        self._latest_cal_readings: dict = {}
+        # Locked at sweep start to the channel keys the connected calorimeter
+        # was exposing, so the CSV header layout stays consistent for the
+        # whole run even if the calorimeter is disconnected mid-sweep.
+        self._sweep_cal_channels: list = []
 
         self.settings = QSettings(__organization__, __app_name__)
 
@@ -3606,19 +3644,10 @@ class Keithley2602BApp(QMainWindow):
     def _on_calorimeter_sample(self, wall_ts: float, readings: dict):
         if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
             self.realtime_tab.push_calorimeter_sample(wall_ts, readings)
-        # If a sweep is running, log to sidecar CSV under the sweep's clock
-        if self._cal_csv_writer and self._cal_sweep_t0 is not None:
-            try:
-                self._cal_csv_writer.writerow([
-                    f"{wall_ts - self._cal_sweep_t0:.3f}",
-                    f"{readings.get('hf', ''):.6g}" if readings.get('hf') is not None else "",
-                    f"{readings.get('t', ''):.6g}" if readings.get('t') is not None else "",
-                    f"{readings.get('ext_t', ''):.6g}" if readings.get('ext_t') is not None else "",
-                ])
-                if self._cal_csv_file:
-                    self._cal_csv_file.flush()
-            except Exception:
-                pass
+        # Cache the latest reading; _run_sweep snapshots it into each
+        # MeasurementPoint so the merged CSV can align cal + Keithley on the
+        # same row without needing a sidecar file.
+        self._latest_cal_readings = dict(readings)
 
     def _on_calorimeter_error(self, msg: str):
         self.status.showMessage(f"Calorimeter: {msg}")
@@ -3748,7 +3777,16 @@ class Keithley2602BApp(QMainWindow):
         # Reset Real Time tab's X axis to "seconds since experiment start"
         if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
             self.realtime_tab.set_reference_now("experiment")
-        self._cal_sweep_t0 = self.sweep_start_time
+
+        # Lock in the calorimeter channel layout for this run's CSV header.
+        # If a calorimeter connects mid-sweep, its samples won't get logged
+        # (start with it connected). If it disconnects mid-sweep, remaining
+        # rows get empty cal cells (which is fine).
+        if self.calorimeter_reader is not None:
+            cal_spec = CALORIMETERS.get(self.calorimeter_name, {})
+            self._sweep_cal_channels = list(cal_spec.get("channels", {}).keys())
+        else:
+            self._sweep_cal_channels = []
         self.run_number += 1
         self.run_start_datetime = datetime.now()
         self.progress.setMaximum(total)
@@ -3765,34 +3803,13 @@ class Keithley2602BApp(QMainWindow):
             self._live_csv_writer = csv.writer(self._live_csv_file)
             for row in self._build_csv_metadata_rows(sweep_values):
                 self._live_csv_writer.writerow(row)
-            self._live_csv_writer.writerow(['Index', 'Channel', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(mW)'])
+            self._live_csv_writer.writerow(_sweep_csv_header(self._sweep_cal_channels))
             self._live_csv_file.flush()
             self.status.showMessage(f"Saving to: {filename}")
         except Exception as e:
             print(f"Live CSV open error: {e}")
             self._live_csv_file = None
             self._live_csv_writer = None
-
-        # Open calorimeter sidecar CSV if a calorimeter is connected. Uses
-        # the same wall-clock reference (sweep start) so both files are
-        # trivially time-alignable.
-        if self.calorimeter_reader is not None and self._live_csv_path:
-            try:
-                cal_path = self._live_csv_path.replace(".csv", "_calorimeter.csv")
-                self._cal_csv_path = cal_path
-                self._cal_csv_file = open(cal_path, "w", newline="", encoding="utf-8")
-                self._cal_csv_writer = csv.writer(self._cal_csv_file)
-                self._cal_csv_writer.writerow(
-                    ["Calorimeter", self.calorimeter_name or ""]
-                )
-                self._cal_csv_writer.writerow(
-                    ["Elapsed(s)", "HF(mW)", "T(C)", "ExtT(C)"]
-                )
-                self._cal_csv_file.flush()
-            except Exception as e:
-                print(f"Calorimeter CSV open error: {e}")
-                self._cal_csv_file = None
-                self._cal_csv_writer = None
 
         thread = threading.Thread(target=self._run_sweep, args=(sweep_values, ch))
         thread.daemon = True
@@ -3909,7 +3926,11 @@ class Keithley2602BApp(QMainWindow):
                         voltage=voltage,
                         current=current,
                         resistance=resistance,
-                        power=power
+                        power=power,
+                        # Snapshot the latest calorimeter reading so the CSV
+                        # row for this sweep sample carries HF/T/ExtT under
+                        # the same computer_time and elapsed clock.
+                        cal_readings=dict(self._latest_cal_readings),
                     )
                     self.measurement_data.append(point)
 
@@ -3966,19 +3987,13 @@ class Keithley2602BApp(QMainWindow):
         i_str = f"{point.current:.4e}A" if point.current else ""
         self.status.showMessage(f"Ch {point.channel.upper()} | Point {point.index}: {point.source_value:.4f} \u2192 {v_str} {i_str}")
 
-        # Write row to live CSV
+        # Write row to live CSV (Keithley columns + calorimeter columns
+        # snapshotted at sample time — see MeasurementPoint.cal_readings).
         if self._live_csv_writer:
             try:
-                self._live_csv_writer.writerow([
-                    point.index,
-                    point.channel.upper(),
-                    point.computer_time,
-                    f"{point.timestamp:.6f}",
-                    f"{point.voltage:.9e}" if point.voltage else "",
-                    f"{point.current:.9e}" if point.current else "",
-                    f"{point.resistance:.9e}" if point.resistance else "",
-                    f"{point.power*1000:.9e}" if point.power else ""
-                ])
+                self._live_csv_writer.writerow(
+                    _sweep_csv_row(point, self._sweep_cal_channels)
+                )
                 self._live_csv_file.flush()
             except Exception as e:
                 print(f"Live CSV write error: {e}")
@@ -4007,17 +4022,6 @@ class Keithley2602BApp(QMainWindow):
                 self._live_csv_path = None
             elif self.auto_save_enabled and self.measurement_data:
                 self._auto_save_csv()
-
-            # Close calorimeter sidecar CSV (if opened for this run)
-            if self._cal_csv_file:
-                try:
-                    self._cal_csv_file.close()
-                except Exception:
-                    pass
-                self._cal_csv_file = None
-                self._cal_csv_writer = None
-                self._cal_csv_path = None
-            self._cal_sweep_t0 = None
 
     def stop_sweep(self):
         self.abort_flag = True
@@ -4067,6 +4071,11 @@ class Keithley2602BApp(QMainWindow):
             vmin = min(sweep_values)
             vmax = max(sweep_values)
             rows.append([f"# Sweep: n={len(sweep_values)} range=[{vmin:.6g}, {vmax:.6g}] total_points={self.total_sweep_points}"])
+        if self.calorimeter_name or self._sweep_cal_channels:
+            name = self.calorimeter_name or "?"
+            host = self.calorimeter_host or "?"
+            channels = ",".join(self._sweep_cal_channels) if self._sweep_cal_channels else "-"
+            rows.append([f"# Calorimeter: {name} @ {host}  channels={channels}"])
         rows.append([])
         return rows
 
@@ -4108,18 +4117,17 @@ class Keithley2602BApp(QMainWindow):
             sweep_values = [p.source_value for p in self.measurement_data] if self.measurement_data else None
             for row in self._build_csv_metadata_rows(sweep_values):
                 writer.writerow(row)
-            writer.writerow(['Index', 'Channel', 'Computer_Time', 'Elapsed(s)', 'Voltage(V)', 'Current(A)', 'Resistance(Ohm)', 'Power(mW)'])
+            # Cal channels for this file: prefer the layout locked at sweep
+            # start; else infer from the first point that has any readings.
+            cal_channels = list(self._sweep_cal_channels)
+            if not cal_channels:
+                for p in self.measurement_data:
+                    if p.cal_readings:
+                        cal_channels = list(p.cal_readings.keys())
+                        break
+            writer.writerow(_sweep_csv_header(cal_channels))
             for p in self.measurement_data:
-                writer.writerow([
-                    p.index,
-                    p.channel.upper(),
-                    p.computer_time,
-                    f"{p.timestamp:.6f}",
-                    f"{p.voltage:.9e}" if p.voltage else "",
-                    f"{p.current:.9e}" if p.current else "",
-                    f"{p.resistance:.9e}" if p.resistance else "",
-                    f"{p.power*1000:.9e}" if p.power else ""
-                ])
+                writer.writerow(_sweep_csv_row(p, cal_channels))
 
     def export_csv(self):
         if not self.measurement_data:
