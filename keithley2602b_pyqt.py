@@ -727,7 +727,7 @@ class MultimeterPanel(QWidget):
         )
         if file:
             try:
-                with open(file, 'w', newline='') as f:
+                with open(file, 'w', newline='', encoding='cp1252', errors='replace') as f:
                     writer = csv.writer(f)
                     writer.writerow(["Time(s)", "Voltage(V)", "Current(A)", "Resistance(\u03a9)", "Power(mW)"])
                     for t, v, i, r, p in self.recorded_data:
@@ -2464,7 +2464,7 @@ class WaveToolDialog(QDialog):
         file, _ = QFileDialog.getSaveFileName(self, "Export Waveform", "", "CSV Files (*.csv)")
         if file:
             try:
-                with open(file, 'w', newline='') as f:
+                with open(file, 'w', newline='', encoding='cp1252', errors='replace') as f:
                     writer = csv.writer(f)
                     for v in self.waveform_values:
                         writer.writerow([v])
@@ -3793,29 +3793,65 @@ class Keithley2602BApp(QMainWindow):
         self.progress.setValue(0)
         self.progress_label.setText(f"0 / {total} | Est: --:--")
 
-        # Open live CSV file for streaming
+        # Open live CSV file for streaming. Split into three stages so a
+        # failure in metadata-row generation doesn't take out the header
+        # row and every subsequent data row.
         try:
             save_dir = self._experiment_save_dir()
             os.makedirs(save_dir, exist_ok=True)
             filename = self._generate_filename()
             self._live_csv_path = os.path.join(save_dir, filename)
-            self._live_csv_file = open(self._live_csv_path, 'w', newline='')
+            self._live_csv_file = open(self._live_csv_path, 'w', newline='', encoding='cp1252', errors='replace')
             self._live_csv_writer = csv.writer(self._live_csv_file)
-            for row in self._build_csv_metadata_rows(sweep_values):
-                self._live_csv_writer.writerow(row)
-            self._live_csv_writer.writerow(_sweep_csv_header(self._sweep_cal_channels))
-            self._live_csv_file.flush()
             self.status.showMessage(f"Saving to: {filename}")
         except Exception as e:
             print(f"Live CSV open error: {e}")
+            self.status.showMessage(f"CSV open failed: {e}")
             self._live_csv_file = None
             self._live_csv_writer = None
+
+        if self._live_csv_writer:
+            # Metadata rows — best-effort. _build_csv_metadata_rows already
+            # catches per-row exceptions internally.
+            try:
+                for row in self._build_csv_metadata_rows(sweep_values):
+                    self._live_csv_writer.writerow(row)
+            except Exception as e:
+                print(f"CSV metadata write error: {e}")
+                self.status.showMessage(f"CSV metadata error: {e}")
+                # Emit a marker row so the user sees something happened
+                try:
+                    self._live_csv_writer.writerow([f"# <metadata truncated: {e}>"])
+                except Exception:
+                    pass
+
+            # Column header — MUST write so data rows are aligned with columns.
+            try:
+                self._live_csv_writer.writerow(_sweep_csv_header(self._sweep_cal_channels))
+                self._live_csv_file.flush()
+            except Exception as e:
+                print(f"CSV header write error: {e}")
+                self.status.showMessage(f"CSV header error: {e}")
+                self._live_csv_file = None
+                self._live_csv_writer = None
 
         thread = threading.Thread(target=self._run_sweep, args=(sweep_values, ch))
         thread.daemon = True
         thread.start()
 
     def _run_sweep(self, sweep_values: List[float], channel: str):
+        # Take exclusive control of the calorimeter socket for the duration
+        # of the sweep. During the sweep we drive cal reads synchronously
+        # after each Keithley measurement so both share the same timestamp.
+        # Resume autonomous polling in the finally block.
+        cal_reader = self.calorimeter_reader
+        cal_active = cal_reader is not None
+        if cal_active:
+            try:
+                cal_reader.pause_polling()
+            except Exception as e:
+                print(f"cal pause failed: {e}")
+
         try:
             function = self.source_settings.function
             compliance = self.source_settings.compliance.value()
@@ -3915,6 +3951,18 @@ class Keithley2602BApp(QMainWindow):
                     if self.measure_settings.measure_p.isChecked() and voltage is not None and current is not None:
                         power = abs(voltage * current)
 
+                    # Drive one calorimeter read right after the Keithley
+                    # measurement so both land under the same computer_time
+                    # and Elapsed(s). If it fails once we stop trying for the
+                    # rest of the run — a broken cal shouldn't kill the sweep.
+                    cal_readings: dict = {}
+                    if cal_active:
+                        try:
+                            cal_readings = cal_reader.poll_once()
+                        except Exception as e:
+                            cal_active = False
+                            print(f"cal read failed: {e}")
+
                     computer_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
                     point = MeasurementPoint(
@@ -3927,10 +3975,7 @@ class Keithley2602BApp(QMainWindow):
                         current=current,
                         resistance=resistance,
                         power=power,
-                        # Snapshot the latest calorimeter reading so the CSV
-                        # row for this sweep sample carries HF/T/ExtT under
-                        # the same computer_time and elapsed clock.
-                        cal_readings=dict(self._latest_cal_readings),
+                        cal_readings=cal_readings,
                     )
                     self.measurement_data.append(point)
 
@@ -3943,6 +3988,13 @@ class Keithley2602BApp(QMainWindow):
             self.running = False
             if self.smu:
                 self.smu.output_off(channel)
+            # Return the socket to the autonomous polling loop so the Real
+            # Time tab keeps updating between experiments.
+            if cal_reader is not None:
+                try:
+                    cal_reader.resume_polling()
+                except Exception as e:
+                    print(f"cal resume failed: {e}")
 
     def _on_measurement_update(self, point):
         if point is None:
@@ -3952,11 +4004,15 @@ class Keithley2602BApp(QMainWindow):
 
         # Feed the Real Time tab. `point.timestamp` is seconds since sweep
         # start; the tab uses wall-clock time, so add self.sweep_start_time.
+        # Push cal readings with the SAME wall_ts so both signal families
+        # land on identical X positions in the live plot.
         if hasattr(self, "realtime_tab") and self.realtime_tab is not None:
             wall_ts = (self.sweep_start_time or time.time()) + point.timestamp
             self.realtime_tab.push_keithley_sample(
                 wall_ts, point.voltage, point.current, point.resistance, point.power
             )
+            if point.cal_readings:
+                self.realtime_tab.push_calorimeter_sample(wall_ts, point.cal_readings)
 
         self.table.add_point(point)
         self.graph.add_point(point)
@@ -4051,31 +4107,48 @@ class Keithley2602BApp(QMainWindow):
         if self.run_start_datetime:
             rows.append([f"# Started: {self.run_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}"])
         rows.append([f"# Experiment: {self._current_experiment_name or '(Untitled)'}"])
+        # Each optional row goes through _safe(). If a single row's builder
+        # throws (missing widget attr, driver query returns junk, etc.), we
+        # append an error marker and keep going instead of dropping every
+        # row after the failure. Root cause of the "CSV has only 3 metadata
+        # rows" bug seen in v3.2.0/v3.3.0.
+        def _safe(desc, builder):
+            try:
+                rows.append([builder()])
+            except Exception as e:
+                rows.append([f"# {desc}: <ERROR {type(e).__name__}: {e}>"])
+
         if self._current_experiment_notes:
-            note = self._current_experiment_notes.strip().replace('\n', ' | ')
-            rows.append([f"# Notes: {note}"])
+            _safe("Notes", lambda: f"# Notes: {self._current_experiment_notes.strip().replace(chr(10), ' | ')}")
         try:
             ident = self.smu.get_identification() if self.smu else ""
         except Exception:
             ident = ""
         if ident:
-            rows.append([f"# Instrument: {ident.strip()}"])
-        rows.append([f"# Mode: {'SIMULATION' if (self.smu and getattr(self.smu, 'simulate', False)) else 'HARDWARE'}"])
-        rows.append([f"# Channel: {self.current_channel.upper()}"])
-        rows.append([f"# Source: function={ss.function} mode={ss.mode.currentText()} range={ss.range.currentText()} compliance={ss.compliance.value()}"])
-        rows.append([f"# Sense: {inst.sense}  OutputOff: {inst.output_off_mode.currentText()}"])
-        measured = [name for name, cb in [("V", ms.measure_v), ("I", ms.measure_i), ("R", ms.measure_r), ("P", ms.measure_p)] if cb.isChecked()]
-        rows.append([f"# Measure: {','.join(measured) or '-'}  range={ms.measure_range.currentText()}  auto_zero={ms.auto_zero.currentText()}"])
-        rows.append([f"# Timing: points={ts.points.value()} repeat={ts.repeat.value()} delay={ts.delay.value()}s nplc={ts.nplc.value()} step_size={ts.step_size.value()}s auto_delay={ts.auto_delay_check.isChecked()}"])
+            _safe("Instrument", lambda: f"# Instrument: {ident.strip()}")
+        _safe("Mode", lambda: f"# Mode: {'SIMULATION' if (self.smu and getattr(self.smu, 'simulate', False)) else 'HARDWARE'}")
+        _safe("Channel", lambda: f"# Channel: {self.current_channel.upper()}")
+        _safe("Source", lambda: f"# Source: function={ss.function} mode={ss.mode.currentText()} range={ss.range.currentText()} compliance={ss.compliance.value()}")
+        _safe("Sense", lambda: f"# Sense: {inst.sense}  OutputOff: {inst.output_off_mode.currentText()}")
+        _safe(
+            "Measure",
+            lambda: (
+                "# Measure: "
+                + (",".join(name for name, cb in [("V", ms.measure_v), ("I", ms.measure_i), ("R", ms.measure_r), ("P", ms.measure_p)] if cb.isChecked()) or "-")
+                + f"  range={ms.measure_range.currentText()}  auto_zero={ms.auto_zero.currentText()}"
+            ),
+        )
+        _safe("Timing", lambda: f"# Timing: points={ts.points.value()} repeat={ts.repeat.value()} delay={ts.delay.value()}s nplc={ts.nplc.value()} step_size={ts.step_size.value()}s auto_delay={ts.auto_delay_check.isChecked()}")
         if sweep_values is not None and len(sweep_values) > 0:
-            vmin = min(sweep_values)
-            vmax = max(sweep_values)
-            rows.append([f"# Sweep: n={len(sweep_values)} range=[{vmin:.6g}, {vmax:.6g}] total_points={self.total_sweep_points}"])
+            _safe(
+                "Sweep",
+                lambda: f"# Sweep: n={len(sweep_values)} range=[{min(sweep_values):.6g}, {max(sweep_values):.6g}] total_points={self.total_sweep_points}",
+            )
         if self.calorimeter_name or self._sweep_cal_channels:
-            name = self.calorimeter_name or "?"
-            host = self.calorimeter_host or "?"
-            channels = ",".join(self._sweep_cal_channels) if self._sweep_cal_channels else "-"
-            rows.append([f"# Calorimeter: {name} @ {host}  channels={channels}"])
+            _safe(
+                "Calorimeter",
+                lambda: f"# Calorimeter: {self.calorimeter_name or '?'} @ {self.calorimeter_host or '?'}  channels={','.join(self._sweep_cal_channels) if self._sweep_cal_channels else '-'}",
+            )
         rows.append([])
         return rows
 
@@ -4112,7 +4185,7 @@ class Keithley2602BApp(QMainWindow):
             self.status.showMessage(f"Auto-save failed: {e}")
 
     def _write_csv(self, filepath: str):
-        with open(filepath, 'w', newline='') as f:
+        with open(filepath, 'w', newline='', encoding='cp1252', errors='replace') as f:
             writer = csv.writer(f)
             sweep_values = [p.source_value for p in self.measurement_data] if self.measurement_data else None
             for row in self._build_csv_metadata_rows(sweep_values):

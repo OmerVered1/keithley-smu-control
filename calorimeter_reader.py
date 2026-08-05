@@ -27,6 +27,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -144,13 +145,21 @@ def probe_port_free(host: str, port: int = C80_PORT, timeout: float = 1.0) -> tu
 
 class CalorimeterReader(QThread):
     """Background thread that polls the configured GET commands for one
-    calorimeter and emits sample(wall_clock_ts, readings) at ~interval_s
-    cadence. `readings` is a dict keyed by channel name (e.g. "hf", "t",
-    "ext_t") with float32 values. Emits error(msg) and exits on
-    connect/read failure.
+    calorimeter. Emits sample(wall_clock_ts, readings) at ~interval_s
+    cadence when its autonomous polling loop is active, and also whenever
+    `poll_once()` is called from an external thread (e.g. the sweep loop
+    driving co-sampled reads).
 
-    `wall_clock_ts` is `time.time()` (seconds since epoch). The consuming
-    UI subtracts its own reference clock to draw a relative-time axis.
+    `readings` is a dict keyed by channel name (e.g. "hf", "t", "ext_t")
+    with float32 values. Emits error(msg) and exits its autonomous loop on
+    connect/read failure. `poll_once()` raises on error so callers can
+    decide whether to keep going.
+
+    Locking: `_sock_lock` serializes all socket access — the autonomous
+    loop and any external `poll_once()` call share one socket safely.
+    Pausing the autonomous loop (`pause_polling`) is what an experiment
+    should do while it wants exclusive control of the socket, to avoid
+    redundant polls.
     """
 
     sample = pyqtSignal(float, dict)
@@ -171,26 +180,72 @@ class CalorimeterReader(QThread):
         self._channels: dict[str, bytes] = dict(channels)
         self._interval = max(0.1, float(interval_s))
         self._stop = False
+        self._sock: socket.socket | None = None
+        self._sock_lock = threading.Lock()
+        # Autonomous loop runs while this event is set; pause_polling()
+        # clears it, resume_polling() sets it. Starts set so run() polls
+        # immediately once connected.
+        self._poll_enabled = threading.Event()
+        self._poll_enabled.set()
 
     def stop(self) -> None:
         self._stop = True
+        # Wake the autonomous loop if it's paused
+        self._poll_enabled.set()
 
-    def _read_channel(self, sock: socket.socket, cmd: bytes) -> float:
-        # `cmd` values only come from the immutable CALORIMETERS registry;
-        # see module docstring.
-        sock.sendall(cmd)
+    def pause_polling(self) -> None:
+        """Stop the autonomous polling loop until resume_polling() is
+        called. External callers can still use poll_once() while paused."""
+        self._poll_enabled.clear()
+
+    def resume_polling(self) -> None:
+        self._poll_enabled.set()
+
+    def _read_channel_locked(self, cmd: bytes) -> float:
+        # Assumes _sock_lock is held and _sock is not None.
+        # `cmd` values only come from the immutable `channels` dict handed
+        # in at construction; see module docstring.
+        self._sock.sendall(cmd)
         buf = b""
         while len(buf) < RSP_LEN:
-            chunk = sock.recv(RSP_LEN - len(buf))
+            chunk = self._sock.recv(RSP_LEN - len(buf))
             if not chunk:
                 raise ConnectionError("socket closed by peer")
             buf += chunk
         return struct.unpack(">f", buf[6:10])[0]
 
+    def _read_all_locked(self) -> dict:
+        readings: dict[str, float] = {}
+        for name, cmd in self._channels.items():
+            readings[name] = self._read_channel_locked(cmd)
+        return readings
+
+    def poll_once(self) -> dict:
+        """Synchronous read of every configured channel. Returns readings
+        dict. Emits the `sample` signal so Real Time listeners see it too.
+        Raises on socket errors.
+        """
+        with self._sock_lock:
+            if self._sock is None:
+                self._sock = socket.create_connection(
+                    (self._host, self._port), timeout=3.0
+                )
+                self._sock.settimeout(2.0)
+            readings = self._read_all_locked()
+        # Emit outside the lock so slot handlers can't deadlock the socket
+        self.sample.emit(time.time(), readings)
+        return readings
+
     def run(self) -> None:
+        # Ensure the socket is open before the autonomous loop starts, so
+        # first-poll latency doesn't distort the initial samples.
         try:
-            sock = socket.create_connection((self._host, self._port), timeout=3.0)
-            sock.settimeout(2.0)
+            with self._sock_lock:
+                if self._sock is None:
+                    self._sock = socket.create_connection(
+                        (self._host, self._port), timeout=3.0
+                    )
+                    self._sock.settimeout(2.0)
         except OSError as e:
             self.error.emit(f"connect failed: {e}")
             return
@@ -198,10 +253,13 @@ class CalorimeterReader(QThread):
         next_tick = time.monotonic()
         try:
             while not self._stop:
-                readings: dict[str, float] = {}
+                # If paused, sleep until resumed (or stopped)
+                if not self._poll_enabled.wait(timeout=0.1):
+                    next_tick = time.monotonic()
+                    continue
                 try:
-                    for name, cmd in self._channels.items():
-                        readings[name] = self._read_channel(sock, cmd)
+                    with self._sock_lock:
+                        readings = self._read_all_locked()
                 except Exception as e:
                     self.error.emit(f"read failed: {e}")
                     return
@@ -213,7 +271,10 @@ class CalorimeterReader(QThread):
                 else:
                     next_tick = time.monotonic()
         finally:
-            try:
-                sock.close()
-            except OSError:
-                pass
+            with self._sock_lock:
+                if self._sock is not None:
+                    try:
+                        self._sock.close()
+                    except OSError:
+                        pass
+                    self._sock = None

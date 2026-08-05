@@ -540,7 +540,7 @@ class RealTimeTab(QWidget):
                 timeline.setdefault(x, {})[s.spec.key] = y
 
         try:
-            with open(path, "w", newline="", encoding="utf-8") as f:
+            with open(path, "w", newline="", encoding="cp1252", errors="replace") as f:
                 w = csv.writer(f)
                 header = ["time_s"]
                 cols: list[Series] = [s for s in self._series.values() if s.available]

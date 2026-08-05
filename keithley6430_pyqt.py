@@ -679,7 +679,7 @@ class MultimeterPanel(QWidget):
         )
         if file:
             try:
-                with open(file, 'w', newline='') as f:
+                with open(file, 'w', newline='', encoding='cp1252', errors='replace') as f:
                     writer = csv.writer(f)
                     writer.writerow(["Time(s)", "Voltage(V)", "Current(A)", "Resistance(Ω)", "Power(mW)"])
                     for t, v, i, r, p in self.recorded_data:
@@ -2402,7 +2402,7 @@ class WaveToolDialog(QDialog):
         file, _ = QFileDialog.getSaveFileName(self, "Export Waveform", "", "CSV Files (*.csv)")
         if file:
             try:
-                with open(file, 'w', newline='') as f:
+                with open(file, 'w', newline='', encoding='cp1252', errors='replace') as f:
                     writer = csv.writer(f)
                     for v in self.waveform_values:
                         writer.writerow([v])
@@ -3590,7 +3590,7 @@ class Keithley6430App(QMainWindow):
             os.makedirs(save_dir, exist_ok=True)
             filename = self._generate_filename()
             self._live_csv_path = os.path.join(save_dir, filename)
-            self._live_csv_file = open(self._live_csv_path, 'w', newline='')
+            self._live_csv_file = open(self._live_csv_path, 'w', newline='', encoding='cp1252', errors='replace')
             self._live_csv_writer = csv.writer(self._live_csv_file)
             for row in self._build_csv_metadata_rows(sweep_values):
                 self._live_csv_writer.writerow(row)
@@ -3889,7 +3889,7 @@ class Keithley6430App(QMainWindow):
             self.status.showMessage(f"Auto-save failed: {e}")
 
     def _write_csv(self, filepath: str):
-        with open(filepath, 'w', newline='') as f:
+        with open(filepath, 'w', newline='', encoding='cp1252', errors='replace') as f:
             writer = csv.writer(f)
             sweep_values = [p.source_value for p in self.measurement_data] if self.measurement_data else None
             for row in self._build_csv_metadata_rows(sweep_values):
