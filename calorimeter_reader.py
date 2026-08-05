@@ -49,15 +49,16 @@ CALORIMETERS: dict[str, dict] = {
     },
     "Drop (Alexsys)": {
         "mac": "00:50:c2:30:e1:eb",
-        # Verified on-bench (Aug 2026):
-        #   HF on channel 1 (same as C80, NOT Calisto's CAN address 2)
-        #   Sample T on channel 4 (S-type thermocouple, -49..1620 °C)
-        # QDOS external T assumed on channel 3 (Calisto shows it at address
-        # 3, K-type, -200..1050 °C). If Ext T reads 0 or garbage, adjust.
+        # Verified on-bench (Aug 2026) via Wireshark capture of Calisto's
+        # polling loop while a live thermocouple pair was attached:
+        #   HF     — cmd 0a arg 0001 (Sample T channel returns mW as float32 BE)
+        #   Sample T — cmd 08 arg 0004
+        #   Ext T  — cmd 08 arg 0005 (NOT arg 0003 as originally guessed from
+        #            Calisto's on-screen CAN-address labels)
         "channels": {
             "hf":    bytes.fromhex("000100" "0a" "0001"),
             "t":     bytes.fromhex("000100" "08" "0004"),
-            "ext_t": bytes.fromhex("000100" "08" "0003"),
+            "ext_t": bytes.fromhex("000100" "08" "0005"),
         },
     },
 }
