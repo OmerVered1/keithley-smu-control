@@ -623,7 +623,11 @@ class MultimeterPanel(QWidget):
 
             resistance = 0
             power = 0
-            if voltage is not None and current is not None and abs(current) > 1e-18:
+            # I threshold kept at K6430's sub-femtoamp noise floor. Adding a
+            # V guard so R isn't computed when V is at measurement noise —
+            # protects against garbage R values at zero-crossings of a
+            # voltage sweep without hurting legitimate low-I measurements.
+            if voltage is not None and current is not None and abs(current) > 1e-18 and abs(voltage) > 1e-6:
                 resistance = voltage / current
                 power = abs(voltage * current)
                 self.resistance_display.set_value(resistance)
@@ -3707,7 +3711,10 @@ class Keithley6430App(QMainWindow):
                         current = self.smu.measure_current()
 
                     if self.measure_settings.measure_r.isChecked() and voltage is not None and current is not None:
-                        if abs(current) > 1e-18:
+                        # See _update_reading for rationale — V guard added
+                        # so voltage-sweep zero-crossings don't produce
+                        # garbage R spikes.
+                        if abs(current) > 1e-18 and abs(voltage) > 1e-6:
                             resistance = voltage / current
 
                     if self.measure_settings.measure_p.isChecked() and voltage is not None and current is not None:

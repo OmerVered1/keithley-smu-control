@@ -641,7 +641,8 @@ class MultimeterPanel(QWidget):
             
             resistance = 0
             power = 0
-            if voltage is not None and current is not None and abs(current) > 1e-12:
+            # Same noise-floor guard as _run_sweep (see K2602B for rationale).
+            if voltage is not None and current is not None and abs(current) > 1e-9 and abs(voltage) > 1e-6:
                 resistance = voltage / current
                 power = abs(voltage * current)
                 self.resistance_display.set_value(resistance)
@@ -3694,7 +3695,10 @@ class Keithley2450App(QMainWindow):
                         current = float(self.smu._query("READ?"))
                     
                     if self.measure_settings.measure_r.isChecked() and voltage and current:
-                        if abs(current) > 1e-12:
+                        # See K2602B _run_sweep for rationale — V/I of two
+                        # near-noise readings produces garbage R spikes at
+                        # sinusoidal-sweep zero-crossings.
+                        if abs(current) > 1e-9 and abs(voltage) > 1e-6:
                             resistance = voltage / current
                     
                     if self.measure_settings.measure_p.isChecked() and voltage and current:

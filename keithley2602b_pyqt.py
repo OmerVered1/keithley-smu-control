@@ -672,7 +672,10 @@ class MultimeterPanel(QWidget):
 
             resistance = 0
             power = 0
-            if voltage is not None and current is not None and abs(current) > 1e-12:
+            # Same noise-floor guard as _run_sweep: R is undefined when V or
+            # I are at measurement noise level (nV / pA). Power is always
+            # fine at V=0 (P=0) so it doesn't need the extra V guard.
+            if voltage is not None and current is not None and abs(current) > 1e-9 and abs(voltage) > 1e-6:
                 resistance = voltage / current
                 power = abs(voltage * current)
                 self.resistance_display.set_value(resistance)
@@ -3945,7 +3948,13 @@ class Keithley2602BApp(QMainWindow):
                             print(f"Measurement error: {e}")
 
                     if self.measure_settings.measure_r.isChecked() and voltage is not None and current is not None:
-                        if abs(current) > 1e-12:
+                        # Skip R when V or I is at noise-floor level. V/I of
+                        # two near-zero-noise values produces garbage spikes
+                        # at zero-crossings of sinusoidal sweeps (real bug
+                        # observed on both sim and real hardware, e.g. rows
+                        # at every waveform trough). Leave R = None → empty
+                        # cell in CSV, cleaner for downstream analysis.
+                        if abs(current) > 1e-9 and abs(voltage) > 1e-6:
                             resistance = voltage / current
 
                     if self.measure_settings.measure_p.isChecked() and voltage is not None and current is not None:
