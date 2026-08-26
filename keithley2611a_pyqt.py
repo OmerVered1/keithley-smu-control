@@ -47,7 +47,8 @@ from keithley2611a_driver import (
 )
 
 from calorimeter_reader import (
-    CALORIMETERS, CalorimeterReader, discover_calorimeter_ip, probe_port_free
+    CALORIMETERS, CalorimeterReader, discover_calorimeter_ip, probe_port_free,
+    SniffingCalorimeterReader, sniff_available, sniff_capture_readiness, sniff_interface_for,
 )
 
 import network_setup
@@ -1720,6 +1721,18 @@ class ConnectionDialog(QDialog):
         cal_host_row.addWidget(self.cal_discover_btn)
         cal_layout.addLayout(cal_host_row)
 
+        cal_mode_row = QHBoxLayout()
+        self.cal_sniff_check = QCheckBox("Sniff mode (watch traffic — Calisto stays connected)")
+        self.cal_sniff_check.setToolTip(
+            "Off: connects directly to the instrument (exclusive — Calisto must be closed).\n"
+            "On: never connects, just watches the traffic Calisto's own polling generates.\n"
+            "Needs Npcap installed and this app run as Administrator."
+        )
+        self.cal_sniff_check.toggled.connect(self._on_cal_sniff_toggled)
+        cal_mode_row.addWidget(self.cal_sniff_check)
+        cal_mode_row.addStretch()
+        cal_layout.addLayout(cal_mode_row)
+
         cal_ctrl_row = QHBoxLayout()
         cal_ctrl_row.addWidget(QLabel("Poll (s):"))
         self.cal_interval = QDoubleSpinBox()
@@ -1732,7 +1745,8 @@ class ConnectionDialog(QDialog):
         self.cal_connect_btn = QPushButton("Connect Calorimeter")
         self.cal_connect_btn.setToolTip(
             "The C80/Drop accepts only one TCP client at a time — close Calisto\n"
-            "before connecting. Reopen it afterwards to save data via Calisto."
+            "before connecting. Reopen it afterwards to save data via Calisto.\n"
+            "(Tick 'Sniff mode' above to record while Calisto stays connected instead.)"
         )
         self.cal_connect_btn.clicked.connect(self._on_calorimeter_connect_toggle)
         cal_ctrl_row.addWidget(self.cal_connect_btn)
@@ -1769,6 +1783,12 @@ class ConnectionDialog(QDialog):
             self.cal_status_label.setText(f"Discover failed: {diag}")
             self.cal_status_label.setStyleSheet("color: #dc2626; font-size: 13px;")
 
+    def _on_cal_sniff_toggled(self, checked: bool):
+        self.cal_interval.setEnabled(not checked)
+        self.cal_connect_btn.setText(
+            "Start Sniffing" if checked else "Connect Calorimeter"
+        )
+
     def _on_calorimeter_connect_toggle(self):
         if self.app.calorimeter_reader is not None:
             self.app.disconnect_calorimeter()
@@ -1782,14 +1802,36 @@ class ConnectionDialog(QDialog):
             if not host:
                 return
 
-        available, reason = probe_port_free(host)
-        if not available:
-            self.cal_status_label.setText(f"Cannot connect: {reason}")
-            self.cal_status_label.setStyleSheet("color: #dc2626; font-size: 13px;")
-            return
-
+        sniff = self.cal_sniff_check.isChecked()
         name = self.cal_combo.currentText()
-        self.app.connect_calorimeter(name, host, float(self.cal_interval.value()))
+
+        if sniff:
+            if not sniff_available(name):
+                QMessageBox.warning(self, "No Sniff Profile",
+                    f"No traffic-decoding profile is bundled for {name}.")
+                return
+            readiness = sniff_capture_readiness()
+            if not readiness.ok:
+                detail = readiness.detail
+                if readiness.remedy:
+                    detail += f"\n\n{readiness.remedy}"
+                QMessageBox.warning(self, "Capture Not Available", detail)
+                return
+            if readiness.warning:
+                reply = QMessageBox.question(
+                    self, "Capture May Fail", f"{readiness.warning}\n\nTry anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                if reply != QMessageBox.Yes:
+                    return
+        else:
+            available, reason = probe_port_free(host)
+            if not available:
+                self.cal_status_label.setText(f"Cannot connect: {reason}")
+                self.cal_status_label.setStyleSheet("color: #dc2626; font-size: 13px;")
+                return
+
+        self.app.connect_calorimeter(name, host, float(self.cal_interval.value()), sniff=sniff)
         self._refresh_calorimeter_status()
 
     def _refresh_calorimeter_status(self):
@@ -1797,11 +1839,16 @@ class ConnectionDialog(QDialog):
         if self.app.calorimeter_reader is not None:
             name = self.app.calorimeter_name or "?"
             host = self.app.calorimeter_host or "?"
-            self.cal_status_label.setText(f"Connected: {name} @ {host}")
+            mode = "sniffing" if self.app.calorimeter_sniffing else "connected"
+            self.cal_status_label.setText(f"{mode.capitalize()}: {name} @ {host}")
             self.cal_status_label.setStyleSheet("color: #16a34a; font-size: 13px;")
-            self.cal_connect_btn.setText("Disconnect Calorimeter")
+            self.cal_connect_btn.setText(
+                "Stop Sniffing" if self.app.calorimeter_sniffing else "Disconnect Calorimeter"
+            )
+            self.cal_sniff_check.setEnabled(False)
         else:
-            self.cal_connect_btn.setText("Connect Calorimeter")
+            self.cal_sniff_check.setEnabled(True)
+            self._on_cal_sniff_toggled(self.cal_sniff_check.isChecked())
             # leave the last status message visible
 
     _LAN_HISTORY_KEY = "connection/lan_ip_history"
@@ -2742,6 +2789,7 @@ class Keithley2611AApp(QMainWindow):
         self.calorimeter_reader: Optional[CalorimeterReader] = None
         self.calorimeter_name: Optional[str] = None
         self.calorimeter_host: Optional[str] = None
+        self.calorimeter_sniffing: bool = False
         # Latest calorimeter sample, kept fresh by _on_calorimeter_sample.
         # Snapshotted into each MeasurementPoint during a sweep so both live
         # streaming and batch export can include cal columns in the same CSV
@@ -3654,12 +3702,17 @@ class Keithley2611AApp(QMainWindow):
 
     # ---- Calorimeter (Setaram C80 / Drop) \u2014 read-only LAN monitor ----
 
-    def connect_calorimeter(self, name: str, host: str, interval_s: float):
-        """Open a read-only LAN connection to a Setaram calorimeter.
+    def connect_calorimeter(self, name: str, host: str, interval_s: float, sniff: bool = False):
+        """Connect to (or, if sniff=True, passively watch) a Setaram calorimeter.
 
         Called from ConnectionDialog. Runs a background QThread poller that
         emits (wall_ts, readings_dict); samples are forwarded to the Real
         Time tab and (during a sweep) written to the sidecar calorimeter CSV.
+
+        In sniff mode nothing connects to the instrument — traffic is
+        decoded off the wire via packet capture — so Calisto (or whatever
+        is actually driving the calorimeter) keeps its one allowed TCP
+        client and can run at the same time.
         """
         if self.calorimeter_reader is not None:
             self.disconnect_calorimeter()
@@ -3669,17 +3722,26 @@ class Keithley2611AApp(QMainWindow):
             QMessageBox.warning(self, "Unknown calorimeter", name)
             return
         channels = spec["channels"]
-        reader = CalorimeterReader(
-            host=host,
-            channels=channels,
-            interval_s=interval_s,
-        )
+
+        if sniff:
+            reader = SniffingCalorimeterReader(
+                host=host,
+                calorimeter_name=name,
+                interface=sniff_interface_for(host),
+            )
+        else:
+            reader = CalorimeterReader(
+                host=host,
+                channels=channels,
+                interval_s=interval_s,
+            )
         reader.sample.connect(self._on_calorimeter_sample)
         reader.error.connect(self._on_calorimeter_error)
         reader.start()
         self.calorimeter_reader = reader
         self.calorimeter_name = name
         self.calorimeter_host = host
+        self.calorimeter_sniffing = sniff
 
         # Tell the Real Time tab which calorimeter channels + Keithley
         # signals are available. Keithley signals are always available.
@@ -3702,6 +3764,7 @@ class Keithley2611AApp(QMainWindow):
         self.calorimeter_reader = None
         self.calorimeter_name = None
         self.calorimeter_host = None
+        self.calorimeter_sniffing = False
         self._update_connection_label()
         self.status.showMessage("Calorimeter disconnected")
 
@@ -3719,6 +3782,7 @@ class Keithley2611AApp(QMainWindow):
         self.calorimeter_reader = None
         self.calorimeter_name = None
         self.calorimeter_host = None
+        self.calorimeter_sniffing = False
         self._update_connection_label()
 
     def _update_connection_label(self):

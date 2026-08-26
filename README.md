@@ -94,6 +94,12 @@ requirements_k2611a.txt     # K2611A dependencies
 
 launcher.py                 # Unified instrument launcher
 K2450Suite/                 # K2450 packaging resources
+
+calorimeter_reader.py        # Setaram calorimeter LAN reader (2602B/2611A "Calorimeter" panel)
+sniffer/                     # Passive packet capture/decode, vendored from lan-signal-sniffer —
+                              # backs the calorimeter panel's "Sniff mode" (watch Calisto's own
+                              # traffic instead of connecting, so both can run at once)
+calorimeter_profiles/        # Verified traffic-decoding profiles for the C80 / Drop
 ```
 
 ## Author

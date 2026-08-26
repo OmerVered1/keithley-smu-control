@@ -29,11 +29,26 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
 
 C80_PORT = 1210
+
+# Maps a CALORIMETERS registry key to the vendored sniffer profile that
+# decodes its traffic, and maps that profile's signal names back to the
+# short keys ("hf"/"t"/"ext_t") the rest of the app already expects from
+# CalorimeterReader — so SniffingCalorimeterReader is a drop-in alternative.
+_SNIFF_PROFILE_BY_CALORIMETER = {
+    "C80 (Setaram)": "Setaram C80",
+    "Drop (Alexsys)": "Alexsys Drop",
+}
+_SNIFF_SIGNAL_TO_CHANNEL = {
+    "heat_flow": "hf",
+    "sample_temperature": "t",
+    "external_temperature": "ext_t",
+}
 
 
 # ----- Registry -------------------------------------------------------------
@@ -279,3 +294,125 @@ class CalorimeterReader(QThread):
                     except OSError:
                         pass
                     self._sock = None
+
+
+# ----- Passive (sniffing) reader --------------------------------------------
+
+def sniff_available(name: str) -> bool:
+    """Whether a sniff-mode profile exists for this CALORIMETERS registry key."""
+    return name in _SNIFF_PROFILE_BY_CALORIMETER
+
+
+def sniff_capture_readiness():
+    """Whether this machine can capture packets right now, and what to do if
+    not (missing scapy, missing Npcap, needs admin/sudo — see sniffer.capture
+    .Readiness for the exact shape). Check before offering sniff mode."""
+    from sniffer.capture import capture_readiness
+    return capture_readiness()
+
+
+def sniff_interface_for(host: str) -> Optional[str]:
+    """Best-guess capture interface for reaching `host`, or None to let the
+    capture library pick its own default."""
+    from sniffer.capture import interface_for
+    return interface_for(host)
+
+
+class SniffingCalorimeterReader(QThread):
+    """Passively watches a calorimeter's traffic and decodes it, instead of
+    connecting to it. Emits the same sample(wall_clock_ts, readings)/error(msg)
+    interface as CalorimeterReader, so it's a drop-in alternative wherever a
+    reader is used — the difference is entirely in how the readings arrive.
+
+    Never opens a socket to the instrument: Calisto (or whatever vendor
+    software is running it) keeps its one allowed TCP client, and this reads
+    the same bytes off the wire via packet capture. Needs a capture driver
+    (Npcap on Windows, BPF on macOS/Linux) and elevated/admin rights — call
+    sniff_capture_readiness() first and surface its remedy if not ok.
+    """
+
+    sample = pyqtSignal(float, dict)
+    error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        host: str,
+        calorimeter_name: str,
+        port: int = C80_PORT,
+        interface: Optional[str] = None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._host = host
+        self._port = port
+        self._calorimeter_name = calorimeter_name
+        self._interface = interface
+        self._stop = False
+
+    def stop(self) -> None:
+        self._stop = True
+
+    # Symmetry with CalorimeterReader's interface. Sniffing has no exclusive
+    # socket to hand back, so pausing is meaningless — accept the calls as
+    # harmless no-ops rather than making callers special-case the two modes.
+    def pause_polling(self) -> None:
+        pass
+
+    def resume_polling(self) -> None:
+        pass
+
+    def run(self) -> None:
+        from sniffer.capture import PacketPump, capture_readiness
+        from sniffer.profile import LiveDecoder, load_profiles
+
+        readiness = capture_readiness()
+        if not readiness.ok:
+            detail = readiness.detail
+            if readiness.remedy:
+                detail += f" — {readiness.remedy}"
+            self.error.emit(f"capture not available: {detail}")
+            return
+
+        profile_name = _SNIFF_PROFILE_BY_CALORIMETER.get(self._calorimeter_name)
+        if profile_name is None:
+            self.error.emit(f"no sniff profile for {self._calorimeter_name!r}")
+            return
+        profiles = {p.name: p for p in load_profiles()}
+        profile = profiles.get(profile_name)
+        if profile is None:
+            self.error.emit(f"sniff profile {profile_name!r} not found")
+            return
+
+        pump = PacketPump(self._host, device_port=self._port, interface=self._interface)
+        decoder = LiveDecoder(profile)
+        try:
+            pump.start()
+        except Exception as e:
+            self.error.emit(f"capture failed to start: {e}")
+            return
+
+        try:
+            while not self._stop:
+                chunks = pump.poll()
+                if chunks:
+                    for s in decoder.feed(chunks):
+                        readings = {
+                            _SNIFF_SIGNAL_TO_CHANNEL.get(k, k): v
+                            for k, v in s.values.items()
+                        }
+                        if readings:
+                            self.sample.emit(s.ts, readings)
+                if pump.error:
+                    self.error.emit(pump.error)
+                    return
+                self.msleep(200)
+            final = decoder.flush()
+            if final is not None:
+                readings = {
+                    _SNIFF_SIGNAL_TO_CHANNEL.get(k, k): v
+                    for k, v in final.values.items()
+                }
+                if readings:
+                    self.sample.emit(final.ts, readings)
+        finally:
+            pump.stop()
