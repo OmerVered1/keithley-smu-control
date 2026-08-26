@@ -3737,6 +3737,8 @@ class Keithley2611AApp(QMainWindow):
             )
         reader.sample.connect(self._on_calorimeter_sample)
         reader.error.connect(self._on_calorimeter_error)
+        if hasattr(reader, "status"):
+            reader.status.connect(lambda msg: self.status.showMessage(f"Calorimeter: {msg}"))
         reader.start()
         self.calorimeter_reader = reader
         self.calorimeter_name = name

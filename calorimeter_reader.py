@@ -333,6 +333,17 @@ class SniffingCalorimeterReader(QThread):
 
     sample = pyqtSignal(float, dict)
     error = pyqtSignal(str)
+    # Non-fatal progress/diagnostic text (which interface got picked, whether
+    # any packets have arrived yet) — unlike `error`, receiving this does not
+    # tear down the connection. Sniff mode fails silent-and-empty far more
+    # often than it raises (wrong interface, nothing polling yet, a firewall
+    # dropping capture), so this is what lets a user tell "quiet because nothing
+    # has happened yet" apart from "quiet because it's capturing the wrong wire".
+    status = pyqtSignal(str)
+
+    # How long to wait with zero captured packets before flagging it — long
+    # enough that a normal ~1 Hz poll loop has had several chances to appear.
+    _STALL_WARNING_S = 8.0
 
     def __init__(
         self,
@@ -391,6 +402,13 @@ class SniffingCalorimeterReader(QThread):
             self.error.emit(f"capture failed to start: {e}")
             return
 
+        self.status.emit(
+            f"capturing on interface: {self._interface or '(auto-picked default — may be wrong NIC)'}"
+        )
+        elapsed_s = 0.0
+        warned_stalled = False
+        samples_seen = False
+
         try:
             while not self._stop:
                 chunks = pump.poll()
@@ -401,10 +419,31 @@ class SniffingCalorimeterReader(QThread):
                             for k, v in s.values.items()
                         }
                         if readings:
+                            if not samples_seen:
+                                samples_seen = True
+                                self.status.emit("first reading decoded — capture is working")
                             self.sample.emit(s.ts, readings)
                 if pump.error:
                     self.error.emit(pump.error)
                     return
+
+                if not samples_seen and not warned_stalled:
+                    elapsed_s += 0.2
+                    if elapsed_s >= self._STALL_WARNING_S:
+                        warned_stalled = True
+                        if pump.packets_seen == 0:
+                            self.status.emit(
+                                f"no packets captured after {self._STALL_WARNING_S:.0f}s on "
+                                f"'{self._interface or 'default'}' — wrong interface, or nothing is "
+                                f"polling {self._host} right now?"
+                            )
+                        else:
+                            self.status.emit(
+                                f"{pump.packets_seen} packet(s) captured but none decoded yet — "
+                                "traffic seen, but it doesn't match the profile's expected "
+                                "request/response shape"
+                            )
+
                 self.msleep(200)
             final = decoder.flush()
             if final is not None:
