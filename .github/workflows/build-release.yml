@@ -124,7 +124,7 @@ jobs:
           body: |
             ## Keithley SMU Control Suite ${{ github.ref_name }}
 
-            Unified launcher for Keithley 2450, 6430, and 2602B SourceMeter instruments.
+            Unified launcher for Keithley 2450, 6430, 2602B, and 2611A SourceMeter instruments.
 
             ### Downloads
             - **macOS**: `Keithley-SMU-Control-Suite-macOS.zip` — extract and run the `.app`.

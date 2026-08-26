@@ -2,7 +2,7 @@
 Keithley SMU Control Suite — Unified Launcher
 ===============================================
 In-process launcher that lets users choose which Keithley instrument to control.
-Supports: Keithley 2450, Keithley 6430, Keithley 2602B.
+Supports: Keithley 2450, Keithley 6430, Keithley 2602B, Keithley 2611A.
 
 Author: Omer Vered
 Date: 2026
@@ -132,7 +132,7 @@ class LauncherWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(__app_name__)
-        self.setMinimumSize(1280, 620)
+        self.setMinimumSize(1690, 620)
         self._instrument_windows = []
         self._setup_ui()
 
@@ -190,6 +190,16 @@ class LauncherWindow(QMainWindow):
         )
         card_2602b.launch_btn.clicked.connect(lambda: self._launch_instrument("2602b"))
         cards_layout.addWidget(card_2602b)
+
+        # K2611A Card
+        card_2611a = InstrumentCard(
+            model="K2611A",
+            subtitle="Single-Channel SourceMeter",
+            specs="±200V / ±1.5A / 20W\nUSB · GPIB · LAN · TSP\nSingle Channel",
+            accent_color="#dc2626",
+        )
+        card_2611a.launch_btn.clicked.connect(lambda: self._launch_instrument("2611a"))
+        cards_layout.addWidget(card_2611a)
 
         cards_layout.addStretch()
         layout.addLayout(cards_layout)
@@ -279,6 +289,13 @@ class LauncherWindow(QMainWindow):
                 app.setPalette(palette)
                 app.setStyleSheet(GLOBAL_STYLESHEET)
                 window = Keithley2602BApp()
+
+            elif instrument == "2611a":
+                from keithley2611a_pyqt import Keithley2611AApp, LightPalette as K2611APalette, GLOBAL_STYLESHEET as K2611A_STYLESHEET
+                palette = K2611APalette()
+                app.setPalette(palette)
+                app.setStyleSheet(K2611A_STYLESHEET)
+                window = Keithley2611AApp()
 
             else:
                 return

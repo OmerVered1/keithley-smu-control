@@ -24,6 +24,12 @@ Professional control and I-V characterization software for Keithley Source Measu
 - TSP (Test Script Processor) native command interface
 - Channel A/B toggle with independent output controls
 
+### Keithley 2611A SourceMeter
+- LAN (LXI Class C / VXI-11), USB, GPIB, RS-232
+- Source voltage/current: +/-200V, +/-1.5A
+- Single channel (smua), TSP native command interface
+- Same TSP command family as the 2602B
+
 ## Features (All Instruments)
 
 - Live multimeter mode with large digital displays
@@ -56,6 +62,10 @@ python keithley6430_pyqt.py
 # Keithley 2602B
 pip install -r requirements_k2602b.txt
 python keithley2602b_pyqt.py
+
+# Keithley 2611A
+pip install -r requirements_k2611a.txt
+python keithley2611a_pyqt.py
 ```
 
 ## File Structure
@@ -77,6 +87,10 @@ README_k6430.md             # K6430 documentation
 keithley2602b_driver.py     # K2602B TSP driver (dual-channel)
 keithley2602b_pyqt.py       # K2602B PyQt5 GUI
 requirements_k2602b.txt     # K2602B dependencies
+
+keithley2611a_driver.py     # K2611A TSP driver (single-channel, LAN/GPIB/USB/RS-232)
+keithley2611a_pyqt.py       # K2611A PyQt5 GUI
+requirements_k2611a.txt     # K2611A dependencies
 
 launcher.py                 # Unified instrument launcher
 K2450Suite/                 # K2450 packaging resources
