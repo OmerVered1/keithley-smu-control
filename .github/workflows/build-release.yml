@@ -19,7 +19,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller
+          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller scapy
 
       - name: Build macOS app from spec
         run: |
@@ -48,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller pillow
+          pip install PyQt5 pyqtgraph numpy pyvisa pyvisa-py pyserial pyinstaller pillow scapy
 
       - name: Build Windows exe from spec
         run: |
