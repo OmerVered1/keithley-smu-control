@@ -110,6 +110,6 @@ if sys.platform == 'darwin':
         bundle_identifier='com.omervered.keithley-smu-control',
         info_plist={
             'NSHighResolutionCapable': True,
-            'CFBundleShortVersionString': '3.4.2',  # bump per release
+            'CFBundleShortVersionString': '3.5.0',  # bump per release
         },
     )
