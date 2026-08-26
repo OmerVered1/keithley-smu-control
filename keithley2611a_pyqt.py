@@ -49,6 +49,7 @@ from keithley2611a_driver import (
 from calorimeter_reader import (
     CALORIMETERS, CalorimeterReader, discover_calorimeter_ip, probe_port_free,
     SniffingCalorimeterReader, sniff_available, sniff_capture_readiness, sniff_interface_for,
+    sniff_list_interfaces,
 )
 
 import network_setup
@@ -1733,6 +1734,22 @@ class ConnectionDialog(QDialog):
         cal_mode_row.addStretch()
         cal_layout.addLayout(cal_mode_row)
 
+        cal_iface_row = QHBoxLayout()
+        cal_iface_row.addWidget(QLabel("Capture interface:"))
+        self.cal_iface_combo = QComboBox()
+        self.cal_iface_combo.addItem("Auto-detect (may guess wrong)", None)
+        self.cal_iface_combo.setToolTip(
+            "Which network adapter to capture on. Auto-detect matches by subnet and can\n"
+            "pick the wrong one (e.g. a Bluetooth adapter) — pick the real NIC by hand if so."
+        )
+        cal_iface_row.addWidget(self.cal_iface_combo, stretch=1)
+        self.cal_iface_refresh_btn = QPushButton("Refresh")
+        self.cal_iface_refresh_btn.clicked.connect(self._refresh_cal_interfaces)
+        cal_iface_row.addWidget(self.cal_iface_refresh_btn)
+        cal_layout.addLayout(cal_iface_row)
+        self.cal_iface_combo.setEnabled(False)
+        self.cal_iface_refresh_btn.setEnabled(False)
+
         cal_ctrl_row = QHBoxLayout()
         cal_ctrl_row.addWidget(QLabel("Poll (s):"))
         self.cal_interval = QDoubleSpinBox()
@@ -1788,6 +1805,16 @@ class ConnectionDialog(QDialog):
         self.cal_connect_btn.setText(
             "Start Sniffing" if checked else "Connect Calorimeter"
         )
+        self.cal_iface_combo.setEnabled(checked)
+        self.cal_iface_refresh_btn.setEnabled(checked)
+        if checked and self.cal_iface_combo.count() <= 1:
+            self._refresh_cal_interfaces()
+
+    def _refresh_cal_interfaces(self):
+        self.cal_iface_combo.clear()
+        self.cal_iface_combo.addItem("Auto-detect (may guess wrong)", None)
+        for iface in sniff_list_interfaces():
+            self.cal_iface_combo.addItem(iface.label(), iface.name)
 
     def _on_calorimeter_connect_toggle(self):
         if self.app.calorimeter_reader is not None:
@@ -1831,7 +1858,9 @@ class ConnectionDialog(QDialog):
                 self.cal_status_label.setStyleSheet("color: #dc2626; font-size: 13px;")
                 return
 
-        self.app.connect_calorimeter(name, host, float(self.cal_interval.value()), sniff=sniff)
+        chosen_interface = self.cal_iface_combo.currentData() if sniff else None
+        self.app.connect_calorimeter(name, host, float(self.cal_interval.value()),
+                                      sniff=sniff, interface=chosen_interface)
         self._refresh_calorimeter_status()
 
     def _refresh_calorimeter_status(self):
@@ -1846,6 +1875,8 @@ class ConnectionDialog(QDialog):
                 "Stop Sniffing" if self.app.calorimeter_sniffing else "Disconnect Calorimeter"
             )
             self.cal_sniff_check.setEnabled(False)
+            self.cal_iface_combo.setEnabled(False)
+            self.cal_iface_refresh_btn.setEnabled(False)
         else:
             self.cal_sniff_check.setEnabled(True)
             self._on_cal_sniff_toggled(self.cal_sniff_check.isChecked())
@@ -3702,7 +3733,8 @@ class Keithley2611AApp(QMainWindow):
 
     # ---- Calorimeter (Setaram C80 / Drop) \u2014 read-only LAN monitor ----
 
-    def connect_calorimeter(self, name: str, host: str, interval_s: float, sniff: bool = False):
+    def connect_calorimeter(self, name: str, host: str, interval_s: float, sniff: bool = False,
+                             interface: Optional[str] = None):
         """Connect to (or, if sniff=True, passively watch) a Setaram calorimeter.
 
         Called from ConnectionDialog. Runs a background QThread poller that
@@ -3712,7 +3744,9 @@ class Keithley2611AApp(QMainWindow):
         In sniff mode nothing connects to the instrument — traffic is
         decoded off the wire via packet capture — so Calisto (or whatever
         is actually driving the calorimeter) keeps its one allowed TCP
-        client and can run at the same time.
+        client and can run at the same time. `interface` overrides the
+        auto-detected capture NIC — pass None to trust the auto-guess,
+        which matches by subnet and can pick the wrong adapter.
         """
         if self.calorimeter_reader is not None:
             self.disconnect_calorimeter()
@@ -3727,7 +3761,7 @@ class Keithley2611AApp(QMainWindow):
             reader = SniffingCalorimeterReader(
                 host=host,
                 calorimeter_name=name,
-                interface=sniff_interface_for(host),
+                interface=interface or sniff_interface_for(host),
             )
         else:
             reader = CalorimeterReader(

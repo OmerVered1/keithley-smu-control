@@ -318,6 +318,15 @@ def sniff_interface_for(host: str) -> Optional[str]:
     return interface_for(host)
 
 
+def sniff_list_interfaces():
+    """Every capture-able interface, for a manual override. The auto-guess in
+    sniff_interface_for() matches by subnet and can pick the wrong adapter —
+    confirmed in practice picking a Bluetooth adapter over the real NIC — so
+    this backs a dropdown the user can override it with."""
+    from sniffer.capture import describe_interfaces
+    return describe_interfaces()
+
+
 class SniffingCalorimeterReader(QThread):
     """Passively watches a calorimeter's traffic and decodes it, instead of
     connecting to it. Emits the same sample(wall_clock_ts, readings)/error(msg)
